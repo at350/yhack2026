@@ -1,353 +1,428 @@
-import { useState, useEffect, useRef } from 'react';
-import * as d3 from 'd3';
-import { useStore } from '../store/useStore';
-import { runIndividual } from '../api/client';
+import { useState, useRef } from 'react';
+import { generatePatientTimeline } from '../api/client';
+import type { TimelineEvent } from '../api/client';
 
-type IncomeQuartile = 1 | 2 | 3 | 4;
-
-interface Profile {
-  age: number;
-  sex: 'male' | 'female';
-  bmi: number;
+interface PatientProfile {
+  name: string;
+  age: string;
+  sex: 'male' | 'female' | 'other';
+  heightFt: string;
+  heightIn: string;
+  weightLbs: string;
+  ethnicity: string;
   smoker: boolean;
-  diabetic: boolean;
-  incomeQuartile: IncomeQuartile;
+  familyHistory: string;
 }
 
-interface TrajectoryPoint {
-  year: number;
-  cardiovascularRisk: number;
-  diabetesRisk: number;
-  mentalHealthRisk: number;
-  mortalityRisk: number;
-  qualityOfLife: number;
-}
-
-interface IndividualResult {
-  profile: Profile;
-  baseline: Record<string, number>;
-  trajectory: TrajectoryPoint[];
-  summary: {
-    qalysGained: number;
-    cardiovascularRiskReduction: number;
-    diabetesRiskReduction: number;
-    qualityOfLifeGain: number;
-    keyBenefits: Array<{ id: string; name: string; icon: string }>;
-  };
-}
-
-const RISK_COLORS: Record<string, string> = {
-  cardiovascularRisk: '#FF6B6B',
-  diabetesRisk: '#FFB84D',
-  mentalHealthRisk: '#9B6FFF',
-  mortalityRisk: '#3D8EFF',
-  qualityOfLife: '#00D4AA',
+const MOCK_PATIENT: PatientProfile = {
+  name: 'Marcus Williams',
+  age: '52',
+  sex: 'male',
+  heightFt: '5',
+  heightIn: '11',
+  weightLbs: '218',
+  ethnicity: 'African American',
+  smoker: true,
+  familyHistory: 'Father had Type 2 diabetes and died of heart attack at 61. Mother has hypertension.',
 };
 
-const RISK_LABELS: Record<string, string> = {
-  cardiovascularRisk: 'Cardiovascular Risk',
-  diabetesRisk: 'Diabetes Risk',
-  mentalHealthRisk: 'Mental Health Risk',
-  mortalityRisk: 'Mortality Risk',
-  qualityOfLife: 'Quality of Life',
+const MOCK_HISTORY = `PATIENT MEDICAL RECORD — Marcus Williams, DOB 1973-04-12
+
+HISTORY OF PRESENT ILLNESS:
+- 1995 (Age 22): Began smoking cigarettes, 1 ppd habit
+- 2001 (Age 28): Annual physical — cholesterol 201 mg/dL, borderline high. Declined lifestyle counseling.
+- 2008 (Age 35): Fasting glucose 108 mg/dL (pre-diabetic range). Advised weight loss. No follow-up for 3 years.
+- 2011 (Age 38): Diagnosed with Type 2 Diabetes. HbA1c 7.8%. Started Metformin 500mg BID.
+- 2014 (Age 41): Blood pressure 148/94 mmHg. Diagnosed with Stage 1 Hypertension. Started Lisinopril 10mg.
+- 2017 (Age 44): Stress ECG — mild ischemic changes noted. Referred to cardiology. Did not attend follow-up.
+- 2019 (Age 46): HbA1c 9.1% — poor glycemic control. Metformin dose increased. Added Glipizide.
+- 2021 (Age 48): ER visit — chest tightness, shortness of breath. Ruled out STEMI, diagnosed unstable angina. Started aspirin, atorvastatin.
+- 2023 (Age 50): Peripheral neuropathy symptoms in feet. Ophthalmology — early diabetic retinopathy bilateral.
+- 2025 (Age 52): Current visit. BMI 30.4. HbA1c 8.6%. BP 152/96 on medication. Active smoker. Sedentary lifestyle.`;
+
+const INTERVENTIONS = [
+  { id: 'smoking_cessation', name: 'Smoking Cessation Program', description: 'Structured counseling, NRT patches, and pharmacotherapy (varenicline) to achieve smoking cessation within 3 months.' },
+  { id: 'diabetes_management', name: 'Intensive Diabetes Management', description: 'CGM device, dietary counseling, HbA1c target <7%, medication optimization with endocrinology referral.' },
+  { id: 'cardiac_rehab', name: 'Cardiac Rehabilitation', description: 'Supervised exercise program, dietary counseling, and medication adherence support for 12 weeks.' },
+  { id: 'hypertension_control', name: 'Hypertension Control Protocol', description: 'Home BP monitoring, medication dose titration, low-sodium DASH diet, and monthly check-ins.' },
+  { id: 'physical_activity', name: 'Structured Physical Activity', description: 'Physician-prescribed 150 min/week moderate exercise, step goals, and fitness tracker integration.' },
+  { id: 'nutrition_counseling', name: 'Medical Nutrition Therapy', description: 'Registered dietitian sessions focused on glycemic index reduction, weight loss of 10% body weight.' },
+];
+
+const TYPE_CONFIG = {
+  past: { color: '#6B7A99', bg: 'rgba(107,122,153,0.12)', border: 'rgba(107,122,153,0.25)', dot: '#6B7A99', label: 'Past' },
+  present: { color: '#00D4AA', bg: 'rgba(0,212,170,0.12)', border: 'rgba(0,212,170,0.35)', dot: '#00D4AA', label: 'Now' },
+  predicted: { color: '#FF9B3D', bg: 'rgba(255,155,61,0.1)', border: 'rgba(255,155,61,0.3)', dot: '#FF9B3D', label: 'Predicted' },
+  warning: { color: '#FF5757', bg: 'rgba(255,87,87,0.1)', border: 'rgba(255,87,87,0.35)', dot: '#FF5757', label: 'Risk' },
+  intervention: { color: '#60B8FF', bg: 'rgba(96,184,255,0.1)', border: 'rgba(96,184,255,0.3)', dot: '#60B8FF', label: 'Intervention' },
+};
+
+const SEVERITY_ICON: Record<string, string> = {
+  low: '◦',
+  medium: '●',
+  high: '▲',
+  critical: '⚠',
+};
+
+const CATEGORY_ICON: Record<string, string> = {
+  diagnosis: '🩺',
+  lifestyle: '🏃',
+  medication: '💊',
+  screening: '🔬',
+  procedure: '🏥',
+  risk_factor: '⚡',
+  intervention: '✅',
+  outcome: '📊',
 };
 
 export default function IndividualPage() {
-  const { interventions } = useStore();
-  const [profile, setProfile] = useState<Profile>({
-    age: 52,
-    sex: 'female',
-    bmi: 29,
-    smoker: false,
-    diabetic: false,
-    incomeQuartile: 2,
+  const [profile, setProfile] = useState<PatientProfile>({
+    name: '', age: '', sex: 'male', heightFt: '', heightIn: '',
+    weightLbs: '', ethnicity: '', smoker: false, familyHistory: '',
   });
-  const [selectedInterventions, setSelectedInterventions] = useState<string[]>([]);
-  const [result, setResult] = useState<IndividualResult | null>(null);
+  const [medicalHistory, setMedicalHistory] = useState('');
+  const [timeline, setTimeline] = useState<TimelineEvent[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeRisk, setActiveRisk] = useState('cardiovascularRisk');
-  const svgRef = useRef<SVGSVGElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [activeInterventions, setActiveInterventions] = useState<Set<string>>(new Set());
+  const [reloading, setReloading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  async function handleSimulate() {
+  function calcBMI(): string {
+    const heightIn = (parseFloat(profile.heightFt) * 12) + parseFloat(profile.heightIn);
+    const lbs = parseFloat(profile.weightLbs);
+    if (!heightIn || !lbs) return '';
+    return ((lbs / (heightIn * heightIn)) * 703).toFixed(1);
+  }
+
+  function loadMockPatient() {
+    setProfile(MOCK_PATIENT);
+    setMedicalHistory(MOCK_HISTORY);
+  }
+
+  async function handleGenerate() {
+    if (!profile.age || !profile.name) {
+      setError('Please enter at least a patient name and age.');
+      return;
+    }
     setLoading(true);
+    setError(null);
+    setTimeline(null);
+    setActiveInterventions(new Set());
     try {
-      const res = await runIndividual({
-        profile: profile as unknown as Record<string, unknown>,
-        interventionIds: selectedInterventions,
-        timeHorizonYears: 10,
+      const bmi = calcBMI();
+      const res = await generatePatientTimeline({
+        profile: {
+          name: profile.name,
+          age: parseInt(profile.age),
+          sex: profile.sex,
+          height: profile.heightFt ? `${profile.heightFt}'${profile.heightIn}"` : undefined,
+          weight: profile.weightLbs ? `${profile.weightLbs} lbs` : undefined,
+          bmi: bmi || undefined,
+          ethnicity: profile.ethnicity || undefined,
+          smoker: profile.smoker,
+          familyHistory: profile.familyHistory || undefined,
+        },
+        medicalHistory: medicalHistory || '',
       });
-      setResult(res);
+      setTimeline(res.timeline);
     } catch (err) {
-      alert(String(err));
+      setError(String(err));
     } finally {
       setLoading(false);
     }
   }
 
-  // D3 line chart
-  useEffect(() => {
-    if (!result || !svgRef.current) return;
-    const svg = d3.select(svgRef.current);
-    svg.selectAll('*').remove();
+  async function handleApplyInterventions() {
+    if (!timeline || activeInterventions.size === 0) return;
+    setReloading(true);
+    setError(null);
+    try {
+      const bmi = calcBMI();
+      const selectedInterventions = INTERVENTIONS.filter(i => activeInterventions.has(i.id))
+        .map(i => ({ name: i.name, description: i.description }));
+      const res = await generatePatientTimeline({
+        profile: {
+          name: profile.name,
+          age: parseInt(profile.age),
+          sex: profile.sex,
+          height: profile.heightFt ? `${profile.heightFt}'${profile.heightIn}"` : undefined,
+          weight: profile.weightLbs ? `${profile.weightLbs} lbs` : undefined,
+          bmi: bmi || undefined,
+          ethnicity: profile.ethnicity || undefined,
+          smoker: profile.smoker,
+          familyHistory: profile.familyHistory || undefined,
+        },
+        medicalHistory: medicalHistory || '',
+        interventions: selectedInterventions,
+      });
+      setTimeline(res.timeline);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setReloading(false);
+    }
+  }
 
-    const W = svgRef.current.clientWidth || 420;
-    const H = 200;
-    const m = { top: 20, right: 30, bottom: 30, left: 40 };
-    const w = W - m.left - m.right;
-    const h = H - m.top - m.bottom;
+  function toggleIntervention(id: string) {
+    setActiveInterventions(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
-    const g = svg.append('g').attr('transform', `translate(${m.left},${m.top})`);
-
-    const data = result.trajectory;
-    const years = data.map(d => d.year);
-    const xScale = d3.scaleLinear().domain([0, 10]).range([0, w]);
-    const yScale = d3.scaleLinear().domain([0, 100]).range([h, 0]);
-
-    // Grid lines
-    g.append('g').attr('class', 'grid')
-      .selectAll('line').data(yScale.ticks(5)).enter()
-      .append('line')
-      .attr('x1', 0).attr('x2', w)
-      .attr('y1', d => yScale(d)).attr('y2', d => yScale(d))
-      .attr('stroke', 'rgba(255,255,255,0.04)').attr('stroke-width', 1);
-
-    // Axes
-    g.append('g').attr('transform', `translate(0,${h})`)
-      .call(d3.axisBottom(xScale).ticks(5).tickFormat(d => `Y${d}`))
-      .selectAll('text').attr('fill', 'var(--text-dim)').attr('font-size', 10);
-
-    g.append('g')
-      .call(d3.axisLeft(yScale).ticks(5))
-      .selectAll('text').attr('fill', 'var(--text-dim)').attr('font-size', 10);
-
-    // Remove axis lines for clean look
-    g.selectAll('.domain,.tick line').attr('stroke', 'rgba(255,255,255,0.06)');
-
-    // Line for active risk
-    const lineGen = d3.line<TrajectoryPoint>()
-      .x(d => xScale(d.year))
-      .y(d => yScale((d as unknown as Record<string, number>)[activeRisk]))
-      .curve(d3.curveCatmullRom);
-
-    const color = RISK_COLORS[activeRisk];
-
-    // Area fill
-    const areaGen = d3.area<TrajectoryPoint>()
-      .x(d => xScale(d.year))
-      .y0(h)
-      .y1(d => yScale((d as unknown as Record<string, number>)[activeRisk]))
-      .curve(d3.curveCatmullRom);
-
-    // Gradient
-    const defs = svg.append('defs');
-    const grad = defs.append('linearGradient').attr('id', 'area-grad').attr('x1', 0).attr('y1', 0).attr('x2', 0).attr('y2', 1);
-    grad.append('stop').attr('offset', '0%').attr('stop-color', color).attr('stop-opacity', 0.3);
-    grad.append('stop').attr('offset', '100%').attr('stop-color', color).attr('stop-opacity', 0.01);
-
-    g.append('path').datum(data).attr('fill', 'url(#area-grad)').attr('d', areaGen);
-    g.append('path').datum(data).attr('fill', 'none').attr('stroke', color)
-      .attr('stroke-width', 2.5).attr('d', lineGen);
-
-    // Data points
-    g.selectAll('circle').data(data).enter()
-      .append('circle')
-      .attr('cx', d => xScale(d.year))
-      .attr('cy', d => yScale((d as unknown as Record<string, number>)[activeRisk]))
-      .attr('r', 3).attr('fill', color).attr('stroke', 'var(--bg-elevated)').attr('stroke-width', 1.5);
-
-  }, [result, activeRisk]);
-
-  const INCOME_LABELS: Record<number, string> = { 1: 'Q1 (Lowest)', 2: 'Q2', 3: 'Q3', 4: 'Q4 (Highest)' };
+  const pastEvents = timeline?.filter(e => e.type === 'past') ?? [];
+  const presentEvent = timeline?.find(e => e.type === 'present');
+  const futureEvents = timeline?.filter(e => e.type === 'predicted' || e.type === 'warning' || e.type === 'intervention') ?? [];
+  const avoidsCount = futureEvents.filter(e => e.avoided).length;
 
   return (
-    <div className="page-full" style={{ gridColumn: '2 / -1', gridRow: 2 }}>
-      <div>
-        <h1 style={{ fontSize: 22, marginBottom: 4 }}>Individual Impact Simulator</h1>
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          Model how selected interventions affect a representative person's 10-year health trajectory.
-        </p>
-      </div>
+    <div className="individual-page">
+      {/* LEFT: Patient Profile Form */}
+      <div className="patient-form-panel">
+        <div className="patient-form-header">
+          <div>
+            <h2 className="patient-form-title">Patient Profile</h2>
+            <p className="patient-form-subtitle">Enter demographics & medical history to generate an AI-powered health timeline</p>
+          </div>
+          <button className="btn-mock" onClick={loadMockPatient} title="Load demo patient">
+            ⚡ Demo
+          </button>
+        </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 20 }}>
-        {/* Profile builder */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="card">
-            <div className="section-label" style={{ marginBottom: 12 }}>Individual Profile</div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div className="slider-row">
-                <div className="slider-label">Age <span>{profile.age} yrs</span></div>
-                <input type="range" min={18} max={85} value={profile.age}
-                  onChange={e => setProfile(p => ({ ...p, age: Number(e.target.value) }))} />
-              </div>
-
-              <div>
-                <div className="section-label">Sex</div>
-                <div className="radio-pills" style={{ marginTop: 6 }}>
-                  {(['male', 'female'] as const).map(s => (
-                    <button key={s} className={`radio-pill${profile.sex === s ? ' active' : ''}`}
-                      onClick={() => setProfile(p => ({ ...p, sex: s }))}>
-                      {s === 'male' ? '👨 Male' : '👩 Female'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="slider-row">
-                <div className="slider-label">BMI <span>{profile.bmi.toFixed(1)}</span></div>
-                <input type="range" min={16} max={50} step={0.5} value={profile.bmi}
-                  onChange={e => setProfile(p => ({ ...p, bmi: Number(e.target.value) }))} />
-              </div>
-
-              <div>
-                <div className="section-label">Income Quartile</div>
-                <div className="radio-pills" style={{ marginTop: 6 }}>
-                  {[1, 2, 3, 4].map(q => (
-                    <button key={q} className={`radio-pill${profile.incomeQuartile === q ? ' active' : ''}`}
-                      onClick={() => setProfile(p => ({ ...p, incomeQuartile: q as IncomeQuartile }))}>
-                      Q{q}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 4 }}>
-                  {INCOME_LABELS[profile.incomeQuartile]}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 12 }}>
-                <label className="custom-checkbox">
-                  <input type="checkbox" checked={profile.smoker}
-                    onChange={e => setProfile(p => ({ ...p, smoker: e.target.checked }))} />
-                  <span className="box">{profile.smoker ? '✓' : ''}</span>
-                  🚬 Smoker
-                </label>
-                <label className="custom-checkbox">
-                  <input type="checkbox" checked={profile.diabetic}
-                    onChange={e => setProfile(p => ({ ...p, diabetic: e.target.checked }))} />
-                  <span className="box">{profile.diabetic ? '✓' : ''}</span>
-                  💉 Diabetic
-                </label>
-              </div>
+        <div className="form-section">
+          <div className="form-label">BASIC INFORMATION</div>
+          <div className="form-grid-2">
+            <div className="form-field">
+              <label className="field-label">Full Name</label>
+              <input className="field-input" placeholder="e.g. John Smith" value={profile.name}
+                onChange={e => setProfile(p => ({ ...p, name: e.target.value }))} />
+            </div>
+            <div className="form-field">
+              <label className="field-label">Age</label>
+              <input className="field-input" type="number" min={1} max={120} placeholder="e.g. 52"
+                value={profile.age} onChange={e => setProfile(p => ({ ...p, age: e.target.value }))} />
             </div>
           </div>
 
-          {/* Interventions */}
-          <div className="card">
-            <div className="section-label" style={{ marginBottom: 8 }}>Apply Interventions</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
-              {interventions.map(i => (
-                <label key={i.id} className="custom-checkbox" style={{ fontSize: 12 }}>
-                  <input type="checkbox"
-                    checked={selectedInterventions.includes(i.id)}
-                    onChange={() => setSelectedInterventions(prev =>
-                      prev.includes(i.id) ? prev.filter(x => x !== i.id) : [...prev, i.id]
-                    )} />
-                  <span className="box">{selectedInterventions.includes(i.id) ? '✓' : ''}</span>
-                  {i.icon} {i.name}
-                </label>
+          <div className="form-field">
+            <label className="field-label">Biological Sex</label>
+            <div className="sex-pills">
+              {(['male', 'female', 'other'] as const).map(s => (
+                <button key={s} className={`sex-pill${profile.sex === s ? ' active' : ''}`}
+                  onClick={() => setProfile(p => ({ ...p, sex: s }))}>
+                  {s === 'male' ? '♂ Male' : s === 'female' ? '♀ Female' : '⊕ Other'}
+                </button>
               ))}
             </div>
           </div>
 
-          <button className="btn btn-primary btn-full" onClick={handleSimulate} disabled={loading}>
-            {loading ? <><div className="spinner" style={{ width: 14, height: 14, borderWidth: 1.5 }} /> Simulating…</> : '▶ Simulate Individual'}
-          </button>
-        </div>
+          <div className="form-grid-3">
+            <div className="form-field">
+              <label className="field-label">Height (ft)</label>
+              <input className="field-input" type="number" min={3} max={8} placeholder="5"
+                value={profile.heightFt} onChange={e => setProfile(p => ({ ...p, heightFt: e.target.value }))} />
+            </div>
+            <div className="form-field">
+              <label className="field-label">Height (in)</label>
+              <input className="field-input" type="number" min={0} max={11} placeholder="11"
+                value={profile.heightIn} onChange={e => setProfile(p => ({ ...p, heightIn: e.target.value }))} />
+            </div>
+            <div className="form-field">
+              <label className="field-label">Weight (lbs)</label>
+              <input className="field-input" type="number" min={50} max={600} placeholder="180"
+                value={profile.weightLbs} onChange={e => setProfile(p => ({ ...p, weightLbs: e.target.value }))} />
+            </div>
+          </div>
 
-        {/* Results */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {result ? (
-            <>
-              {/* Baseline risk scores */}
-              <div className="card fade-in">
-                <div className="section-label" style={{ marginBottom: 12 }}>Baseline Risk Profile</div>
-                <div className="metrics-grid">
-                  {Object.entries(result.baseline).map(([key, val]) => (
-                    <div key={key} className="metric-tile" style={{ borderColor: `${RISK_COLORS[key]}30` }}>
-                      <div className="metric-tile-value" style={{ color: RISK_COLORS[key] }}>{val}</div>
-                      <div className="metric-tile-label">{RISK_LABELS[key]}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Key outcomes */}
-              <div className="card fade-in">
-                <div className="section-label" style={{ marginBottom: 12 }}>10-Year Impact Summary</div>
-                <div className="metrics-grid">
-                  <div className="metric-tile" style={{ borderColor: 'rgba(0,212,170,0.3)' }}>
-                    <div className="metric-tile-value num-accent">{result.summary.qalysGained}</div>
-                    <div className="metric-tile-label">QALYs Gained</div>
-                  </div>
-                  <div className="metric-tile">
-                    <div className="metric-tile-value" style={{ color: 'var(--accent-coral)' }}>{result.summary.cardiovascularRiskReduction}pts</div>
-                    <div className="metric-tile-label">Cardio Risk ↓</div>
-                  </div>
-                  <div className="metric-tile">
-                    <div className="metric-tile-value" style={{ color: 'var(--accent-amber)' }}>{result.summary.diabetesRiskReduction}pts</div>
-                    <div className="metric-tile-label">Diabetes Risk ↓</div>
-                  </div>
-                  <div className="metric-tile">
-                    <div className="metric-tile-value" style={{ color: 'var(--accent-primary)' }}>+{result.summary.qualityOfLifeGain}pts</div>
-                    <div className="metric-tile-label">Quality of Life ↑</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Trajectory chart */}
-              <div className="card fade-in">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                  <div className="section-label">10-Year Trajectory</div>
-                  <div className="radio-pills">
-                    {Object.keys(RISK_COLORS).map(k => (
-                      <button key={k} className={`radio-pill${activeRisk === k ? ' active' : ''}`}
-                        style={{ fontSize: 10, borderColor: RISK_COLORS[k] + '50' }}
-                        onClick={() => setActiveRisk(k)}>
-                        {RISK_LABELS[k].split(' ')[0]}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <svg ref={svgRef} style={{ width: '100%', height: 200 }} />
-              </div>
-
-              {/* Applied interventions */}
-              {result.summary.keyBenefits.length > 0 && (
-                <div className="card fade-in">
-                  <div className="section-label" style={{ marginBottom: 8 }}>Applied Interventions</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {result.summary.keyBenefits.map(b => (
-                      <span key={b.id} style={{
-                        padding: '4px 10px', borderRadius: 99,
-                        background: 'rgba(0,212,170,0.1)', border: '1px solid rgba(0,212,170,0.2)',
-                        fontSize: 12, color: 'var(--accent-primary)',
-                      }}>
-                        {b.icon} {b.name}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div style={{
-              flex: 1, display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center',
-              gap: 16, color: 'var(--text-dim)', textAlign: 'center', minHeight: 300,
-            }}>
-              <div style={{ fontSize: 48, opacity: 0.3 }}>👤</div>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                  Configure a profile and click Simulate
-                </div>
-                <div style={{ fontSize: 12, lineHeight: 1.6 }}>
-                  See how public health programs affect a representative person's<br />
-                  cardiovascular risk, diabetes risk, and quality of life over 10 years.
-                </div>
-              </div>
+          {calcBMI() && (
+            <div className="bmi-badge">
+              BMI: <strong>{calcBMI()}</strong>
+              <span className={`bmi-label ${parseFloat(calcBMI()) >= 30 ? 'bmi-obese' : parseFloat(calcBMI()) >= 25 ? 'bmi-overweight' : 'bmi-normal'}`}>
+                {parseFloat(calcBMI()) >= 30 ? 'Obese' : parseFloat(calcBMI()) >= 25 ? 'Overweight' : 'Normal'}
+              </span>
             </div>
           )}
+
+          <div className="form-field">
+            <label className="field-label">Ethnicity</label>
+            <input className="field-input" placeholder="e.g. African American"
+              value={profile.ethnicity} onChange={e => setProfile(p => ({ ...p, ethnicity: e.target.value }))} />
+          </div>
+
+          <label className="smoker-toggle">
+            <input type="checkbox" checked={profile.smoker}
+              onChange={e => setProfile(p => ({ ...p, smoker: e.target.checked }))} />
+            <span className={`smoker-box${profile.smoker ? ' active' : ''}`}>{profile.smoker ? '✓' : ''}</span>
+            🚬 Current smoker
+          </label>
+
+          <div className="form-field">
+            <label className="field-label">Family History</label>
+            <textarea className="field-input field-textarea" rows={2}
+              placeholder="e.g. Father had Type 2 diabetes, Mother has hypertension..."
+              value={profile.familyHistory}
+              onChange={e => setProfile(p => ({ ...p, familyHistory: e.target.value }))} />
+          </div>
         </div>
+
+        <div className="form-section">
+          <div className="form-label">MEDICAL RECORDS</div>
+
+          <div className="upload-zone" onClick={() => fileInputRef.current?.click()}>
+            <div className="upload-icon">📋</div>
+            <div className="upload-text">Upload Medical Records (PDF)</div>
+            <div className="upload-sub">or click to select file — text will be extracted</div>
+            <input ref={fileInputRef} type="file" accept=".pdf,.txt" style={{ display: 'none' }}
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                // For demo: if txt, read it; if PDF show placeholder
+                if (file.name.endsWith('.txt')) {
+                  const reader = new FileReader();
+                  reader.onload = ev => setMedicalHistory(ev.target?.result as string ?? '');
+                  reader.readAsText(file);
+                } else {
+                  setMedicalHistory(`[PDF uploaded: ${file.name}]\nMedical records content would be extracted here.`);
+                }
+              }} />
+          </div>
+
+          <div className="form-field" style={{ marginTop: 8 }}>
+            <label className="field-label">Or paste / type medical history</label>
+            <textarea className="field-input field-textarea field-textarea-tall"
+              placeholder="Paste clinical notes, diagnoses, medications, lab results..."
+              value={medicalHistory}
+              onChange={e => setMedicalHistory(e.target.value)} />
+          </div>
+        </div>
+
+        {error && <div className="timeline-error">{error}</div>}
+
+        <button className="btn-generate" onClick={handleGenerate} disabled={loading}>
+          {loading ? (
+            <><div className="btn-spinner" /> Analyzing with Claude AI...</>
+          ) : (
+            <>✦ Generate Health Timeline</>
+          )}
+        </button>
+      </div>
+
+      {/* RIGHT: Timeline */}
+      <div className="timeline-panel">
+        {!timeline && !loading && (
+          <div className="timeline-empty">
+            <div className="timeline-empty-icon">⏱</div>
+            <div className="timeline-empty-title">Your patient timeline will appear here</div>
+            <div className="timeline-empty-sub">Fill in the patient profile and click "Generate Health Timeline" — Claude AI will analyze the records and project a personalized chronological timeline with future predictions.</div>
+            <button className="btn-mock-large" onClick={loadMockPatient}>
+              ⚡ Load Demo Patient & Generate
+            </button>
+          </div>
+        )}
+
+        {loading && (
+          <div className="timeline-loading">
+            <div className="loading-orb" />
+            <div className="loading-title">Analyzing patient data...</div>
+            <div className="loading-sub">Claude AI is reading the medical records and building a personalized timeline</div>
+          </div>
+        )}
+
+        {timeline && (
+          <>
+            <div className="timeline-header">
+              <div>
+                <h2 className="timeline-patient-name">{profile.name}'s Health Timeline</h2>
+                <p className="timeline-patient-meta">
+                  {profile.age}yo · {profile.sex} · BMI {calcBMI() || '—'}
+                  {avoidsCount > 0 && (
+                    <span className="avoided-badge">✓ {avoidsCount} outcome{avoidsCount > 1 ? 's' : ''} improved by interventions</span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* Interventions Panel */}
+            <div className="intervention-strip">
+              <div className="intervention-strip-label">APPLY INTERVENTIONS</div>
+              <div className="intervention-chips">
+                {INTERVENTIONS.map(intv => (
+                  <button key={intv.id}
+                    className={`intervention-chip${activeInterventions.has(intv.id) ? ' active' : ''}`}
+                    onClick={() => toggleIntervention(intv.id)}
+                    title={intv.description}>
+                    {activeInterventions.has(intv.id) ? '✓ ' : ''}{intv.name}
+                  </button>
+                ))}
+              </div>
+              {activeInterventions.size > 0 && (
+                <button className="btn-reevaluate" onClick={handleApplyInterventions} disabled={reloading}>
+                  {reloading ? <><div className="btn-spinner btn-spinner-sm" /> Re-evaluating...</> : `↺ Re-evaluate with ${activeInterventions.size} intervention${activeInterventions.size > 1 ? 's' : ''}`}
+                </button>
+              )}
+            </div>
+
+            {/* The actual timeline */}
+            <div className="timeline-scroll">
+              <div className="timeline-track">
+
+                {/* PAST */}
+                {pastEvents.length > 0 && (
+                  <div className="timeline-era-label">PAST HISTORY</div>
+                )}
+                {pastEvents.map((ev, i) => (
+                  <TimelineCard key={`past-${i}`} event={ev} />
+                ))}
+
+                {/* PRESENT */}
+                {presentEvent && (
+                  <>
+                    <div className="timeline-era-label timeline-now-label">NOW — AGE {presentEvent.age}</div>
+                    <TimelineCard event={presentEvent} />
+                  </>
+                )}
+
+                {/* FUTURE */}
+                {futureEvents.length > 0 && (
+                  <div className="timeline-era-label timeline-future-label">PROJECTED FUTURE</div>
+                )}
+                {futureEvents.map((ev, i) => (
+                  <TimelineCard key={`future-${i}`} event={ev} />
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TimelineCard({ event: ev }: { event: TimelineEvent }) {
+  const cfg = TYPE_CONFIG[ev.type] ?? TYPE_CONFIG.past;
+  return (
+    <div className={`timeline-card${ev.avoided ? ' timeline-card-avoided' : ''}`}
+      style={{ borderColor: cfg.border, background: cfg.bg }}>
+      <div className="timeline-card-side">
+        <div className="timeline-dot" style={{ background: cfg.dot, boxShadow: `0 0 8px ${cfg.dot}80` }} />
+        <div className="timeline-line" />
+      </div>
+      <div className="timeline-card-body">
+        <div className="timeline-card-meta">
+          <span className="timeline-age" style={{ color: cfg.color }}>Age {ev.age}</span>
+          <span className="timeline-year">{ev.year}</span>
+          <span className="timeline-type-badge" style={{ color: cfg.color, borderColor: cfg.border }}>{cfg.label}</span>
+          <span className="timeline-category-icon" title={ev.category}>{CATEGORY_ICON[ev.category] ?? '📌'}</span>
+          <span className="timeline-severity" title={`Severity: ${ev.severity}`}>{SEVERITY_ICON[ev.severity]}</span>
+        </div>
+        <div className={`timeline-card-title${ev.avoided ? ' timeline-title-avoided' : ''}`} style={ ev.avoided ? {} : { color: cfg.color === '#6B7A99' ? 'var(--text-primary)' : cfg.color }}>
+          {ev.avoided && <span className="avoided-strike">⟶ </span>}
+          {ev.title}
+          {ev.avoided && <span className="avoided-tag"> AVOIDED</span>}
+        </div>
+        <div className="timeline-card-desc">{ev.description}</div>
       </div>
     </div>
   );

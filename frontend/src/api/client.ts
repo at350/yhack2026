@@ -87,3 +87,28 @@ export function streamAISummary(
     pump();
   }).catch(e => onError(String(e)));
 }
+
+export async function generatePatientTimeline(body: {
+  profile: Record<string, unknown>;
+  medicalHistory: string;
+  interventions?: Array<{ name: string; description: string }>;
+}) {
+  const res = await fetch(`${API_BASE}/ai/patient-timeline`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ timeline: TimelineEvent[] }>;
+}
+
+export interface TimelineEvent {
+  age: number;
+  year: number;
+  type: 'past' | 'present' | 'predicted' | 'intervention' | 'warning';
+  title: string;
+  description: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  category: string;
+  avoided: boolean;
+}
