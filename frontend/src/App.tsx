@@ -80,7 +80,7 @@ export default function App() {
         {/* Page Content Layers */}
         {activeTab === 'map' && <MapPage />}
         {activeTab === 'compare' && <ComparePage />}
-        {activeTab === 'individual' && <IndividualPage />}
+        {activeTab === 'individual' && <div className="page-full-flush"><IndividualPage /></div>}
       </div>
     </>
   );
