@@ -1,194 +1,154 @@
-import { useState, useRef } from 'react';
-import { generatePatientTimeline } from '../api/client';
-import type { TimelineEvent } from '../api/client';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { generatePatientTimeline, getSimilarityScore } from '../api/client';
+import type { TimelineEvent, SimilarityResult } from '../api/client';
 
+// ── Types ──────────────────────────────────────────────────────────────────
 interface PatientProfile {
-  name: string;
-  age: string;
-  sex: 'male' | 'female' | 'other';
-  heightFt: string;
-  heightIn: string;
-  weightLbs: string;
-  ethnicity: string;
-  smoker: boolean;
-  familyHistory: string;
+  name: string; age: string; sex: 'male' | 'female' | 'other';
+  heightFt: string; heightIn: string; weightLbs: string;
+  ethnicity: string; smoker: boolean; familyHistory: string; state: string;
 }
 
+// ── Mock demo data ─────────────────────────────────────────────────────────
 const MOCK_PATIENT: PatientProfile = {
-  name: 'Marcus Williams',
-  age: '52',
-  sex: 'male',
-  heightFt: '5',
-  heightIn: '11',
-  weightLbs: '218',
-  ethnicity: 'African American',
-  smoker: true,
-  familyHistory: 'Father had Type 2 diabetes and died of heart attack at 61. Mother has hypertension.',
+  name: 'Marcus Williams', age: '52', sex: 'male',
+  heightFt: '5', heightIn: '11', weightLbs: '218',
+  ethnicity: 'African American', smoker: true,
+  familyHistory: 'Father had Type 2 diabetes, died of heart attack at 61. Mother has hypertension.',
+  state: 'New York',
 };
-
 const MOCK_HISTORY = `PATIENT MEDICAL RECORD — Marcus Williams, DOB 1973-04-12
+- 1995 (Age 22): Began smoking cigarettes, 1 ppd habit.
+- 2008 (Age 35): Fasting glucose 108 mg/dL (pre-diabetic). Declined lifestyle counseling.
+- 2011 (Age 38): Diagnosed Type 2 Diabetes. HbA1c 7.8%. Started Metformin 500mg BID.
+- 2014 (Age 41): BP 148/94 mmHg. Stage 1 Hypertension. Started Lisinopril 10mg.
+- 2021 (Age 48): ER visit chest tightness. Ruled out STEMI, diagnosed unstable angina.
+- 2023 (Age 50): Peripheral neuropathy symptoms. Early diabetic retinopathy bilateral.
+- 2025 (Age 52): Current. HbA1c 8.6%. BP 152/96 on medication. Active smoker. Sedentary.`;
 
-HISTORY OF PRESENT ILLNESS:
-- 1995 (Age 22): Began smoking cigarettes, 1 ppd habit
-- 2001 (Age 28): Annual physical — cholesterol 201 mg/dL, borderline high. Declined lifestyle counseling.
-- 2008 (Age 35): Fasting glucose 108 mg/dL (pre-diabetic range). Advised weight loss. No follow-up for 3 years.
-- 2011 (Age 38): Diagnosed with Type 2 Diabetes. HbA1c 7.8%. Started Metformin 500mg BID.
-- 2014 (Age 41): Blood pressure 148/94 mmHg. Diagnosed with Stage 1 Hypertension. Started Lisinopril 10mg.
-- 2017 (Age 44): Stress ECG — mild ischemic changes noted. Referred to cardiology. Did not attend follow-up.
-- 2019 (Age 46): HbA1c 9.1% — poor glycemic control. Metformin dose increased. Added Glipizide.
-- 2021 (Age 48): ER visit — chest tightness, shortness of breath. Ruled out STEMI, diagnosed unstable angina. Started aspirin, atorvastatin.
-- 2023 (Age 50): Peripheral neuropathy symptoms in feet. Ophthalmology — early diabetic retinopathy bilateral.
-- 2025 (Age 52): Current visit. BMI 30.4. HbA1c 8.6%. BP 152/96 on medication. Active smoker. Sedentary lifestyle.`;
-
+// ── Available interventions for simulation ─────────────────────────────────
 const INTERVENTIONS = [
-  { id: 'smoking_cessation', name: 'Smoking Cessation Program', description: 'Structured counseling, NRT patches, and pharmacotherapy (varenicline) to achieve smoking cessation within 3 months.' },
-  { id: 'diabetes_management', name: 'Intensive Diabetes Management', description: 'CGM device, dietary counseling, HbA1c target <7%, medication optimization with endocrinology referral.' },
-  { id: 'cardiac_rehab', name: 'Cardiac Rehabilitation', description: 'Supervised exercise program, dietary counseling, and medication adherence support for 12 weeks.' },
-  { id: 'hypertension_control', name: 'Hypertension Control Protocol', description: 'Home BP monitoring, medication dose titration, low-sodium DASH diet, and monthly check-ins.' },
-  { id: 'physical_activity', name: 'Structured Physical Activity', description: 'Physician-prescribed 150 min/week moderate exercise, step goals, and fitness tracker integration.' },
-  { id: 'nutrition_counseling', name: 'Medical Nutrition Therapy', description: 'Registered dietitian sessions focused on glycemic index reduction, weight loss of 10% body weight.' },
+  { id: 'smoking_cessation', name: 'Smoking Cessation Program', description: 'Structured counseling, NRT patches, and pharmacotherapy to achieve cessation within 3 months.' },
+  { id: 'diabetes_management', name: 'Intensive Diabetes Management', description: 'CGM device, dietary counseling, HbA1c target <7%, medication optimization.' },
+  { id: 'cardiac_rehab', name: 'Cardiac Rehabilitation', description: 'Supervised exercise program, dietary counseling, medication adherence for 12 weeks.' },
+  { id: 'hypertension_control', name: 'Hypertension Control Protocol', description: 'Home BP monitoring, medication titration, low-sodium DASH diet, monthly check-ins.' },
+  { id: 'nutrition_counseling', name: 'Medical Nutrition Therapy', description: 'Registered dietitian sessions, glycemic index reduction, 10% weight loss goal.' },
+  { id: 'physical_activity', name: 'Structured Physical Activity', description: 'Physician-prescribed 150 min/week moderate exercise with fitness tracker.' },
 ];
 
-const TYPE_CONFIG = {
-  past: { color: '#6B7A99', bg: 'rgba(107,122,153,0.12)', border: 'rgba(107,122,153,0.25)', dot: '#6B7A99', label: 'Past' },
-  present: { color: '#00D4AA', bg: 'rgba(0,212,170,0.12)', border: 'rgba(0,212,170,0.35)', dot: '#00D4AA', label: 'Now' },
-  predicted: { color: '#FF9B3D', bg: 'rgba(255,155,61,0.1)', border: 'rgba(255,155,61,0.3)', dot: '#FF9B3D', label: 'Predicted' },
-  warning: { color: '#FF5757', bg: 'rgba(255,87,87,0.1)', border: 'rgba(255,87,87,0.35)', dot: '#FF5757', label: 'Risk' },
-  intervention: { color: '#60B8FF', bg: 'rgba(96,184,255,0.1)', border: 'rgba(96,184,255,0.3)', dot: '#60B8FF', label: 'Intervention' },
+// ── Visual config ──────────────────────────────────────────────────────────
+const NODE_CONFIG = {
+  past:        { fill: '#3D4A6E', border: '#5B6A90', glow: 'transparent', label: 'HISTORY' },
+  present:     { fill: '#003D30', border: '#00D4AA', glow: 'rgba(0,212,170,0.4)', label: 'NOW' },
+  predicted:   { fill: '#4A3000', border: '#FF9B3D', glow: 'rgba(255,155,61,0.3)', label: 'RISK' },
+  risk:        { fill: '#4A3000', border: '#FF9B3D', glow: 'rgba(255,155,61,0.3)', label: 'RISK' },
+  warning:     { fill: '#4A0000', border: '#FF5757', glow: 'rgba(255,87,87,0.4)', label: 'HIGH RISK' },
+  intervention:{ fill: '#003040', border: '#60B8FF', glow: 'rgba(96,184,255,0.3)', label: 'INTERVENTION' },
 };
 
-const SEVERITY_ICON: Record<string, string> = {
-  low: '◦',
-  medium: '●',
-  high: '▲',
-  critical: '⚠',
+const SEVERITY_SIZE: Record<string, number> = {
+  low: 28, medium: 34, high: 40, critical: 46,
 };
 
-const CATEGORY_ICON: Record<string, string> = {
-  diagnosis: '🩺',
-  lifestyle: '🏃',
-  medication: '💊',
-  screening: '🔬',
-  procedure: '🏥',
-  risk_factor: '⚡',
-  intervention: '✅',
-  outcome: '📊',
-};
-
+// ── Main Component ─────────────────────────────────────────────────────────
 export default function IndividualPage() {
   const [profile, setProfile] = useState<PatientProfile>({
     name: '', age: '', sex: 'male', heightFt: '', heightIn: '',
-    weightLbs: '', ethnicity: '', smoker: false, familyHistory: '',
+    weightLbs: '', ethnicity: '', smoker: false, familyHistory: '', state: '',
   });
   const [medicalHistory, setMedicalHistory] = useState('');
   const [timeline, setTimeline] = useState<TimelineEvent[] | null>(null);
+  const [similarity, setSimilarity] = useState<SimilarityResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeInterventions, setActiveInterventions] = useState<Set<string>>(new Set());
+  const [showInterventionPanel, setShowInterventionPanel] = useState(false);
   const [reloading, setReloading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function calcBMI(): string {
-    const heightIn = (parseFloat(profile.heightFt) * 12) + parseFloat(profile.heightIn);
+    const h = (parseFloat(profile.heightFt) * 12) + parseFloat(profile.heightIn);
     const lbs = parseFloat(profile.weightLbs);
-    if (!heightIn || !lbs) return '';
-    return ((lbs / (heightIn * heightIn)) * 703).toFixed(1);
+    if (!h || !lbs) return '';
+    return ((lbs / (h * h)) * 703).toFixed(1);
   }
 
-  function loadMockPatient() {
+  function loadMock() {
     setProfile(MOCK_PATIENT);
     setMedicalHistory(MOCK_HISTORY);
   }
 
   async function handleGenerate() {
-    if (!profile.age || !profile.name) {
-      setError('Please enter at least a patient name and age.');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setTimeline(null);
-    setActiveInterventions(new Set());
+    if (!profile.age || !profile.name) { setError('Please enter a patient name and age.'); return; }
+    setLoading(true); setError(null); setTimeline(null); setSimilarity(null);
+    setActiveInterventions(new Set()); setShowInterventionPanel(false);
     try {
       const bmi = calcBMI();
-      const res = await generatePatientTimeline({
-        profile: {
-          name: profile.name,
-          age: parseInt(profile.age),
-          sex: profile.sex,
-          height: profile.heightFt ? `${profile.heightFt}'${profile.heightIn}"` : undefined,
-          weight: profile.weightLbs ? `${profile.weightLbs} lbs` : undefined,
-          bmi: bmi || undefined,
-          ethnicity: profile.ethnicity || undefined,
-          smoker: profile.smoker,
-          familyHistory: profile.familyHistory || undefined,
-        },
-        medicalHistory: medicalHistory || '',
-      });
-      setTimeline(res.timeline);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
+      const [timelineRes, simRes] = await Promise.all([
+        generatePatientTimeline({
+          profile: {
+            name: profile.name, age: parseInt(profile.age), sex: profile.sex,
+            height: profile.heightFt ? `${profile.heightFt}'${profile.heightIn}"` : undefined,
+            weight: profile.weightLbs ? `${profile.weightLbs} lbs` : undefined,
+            bmi: bmi || undefined, ethnicity: profile.ethnicity || undefined,
+            smoker: profile.smoker, familyHistory: profile.familyHistory || undefined,
+          },
+          medicalHistory,
+        }),
+        profile.age ? getSimilarityScore({
+          age: parseInt(profile.age), sex: profile.sex,
+          ethnicity: profile.ethnicity, bmi,
+          smoker: profile.smoker, state: profile.state,
+        }).catch(() => null) : Promise.resolve(null),
+      ]);
+      setTimeline(timelineRes.timeline);
+      setSimilarity(simRes);
+    } catch (err) { setError(String(err)); }
+    finally { setLoading(false); }
   }
 
-  async function handleApplyInterventions() {
+  async function handleSimulateInterventions() {
     if (!timeline || activeInterventions.size === 0) return;
-    setReloading(true);
-    setError(null);
+    setReloading(true); setError(null);
     try {
       const bmi = calcBMI();
-      const selectedInterventions = INTERVENTIONS.filter(i => activeInterventions.has(i.id))
+      const selected = INTERVENTIONS.filter(i => activeInterventions.has(i.id))
         .map(i => ({ name: i.name, description: i.description }));
       const res = await generatePatientTimeline({
         profile: {
-          name: profile.name,
-          age: parseInt(profile.age),
-          sex: profile.sex,
-          height: profile.heightFt ? `${profile.heightFt}'${profile.heightIn}"` : undefined,
-          weight: profile.weightLbs ? `${profile.weightLbs} lbs` : undefined,
-          bmi: bmi || undefined,
-          ethnicity: profile.ethnicity || undefined,
-          smoker: profile.smoker,
-          familyHistory: profile.familyHistory || undefined,
+          name: profile.name, age: parseInt(profile.age), sex: profile.sex,
+          bmi: bmi || undefined, ethnicity: profile.ethnicity || undefined,
+          smoker: profile.smoker, familyHistory: profile.familyHistory || undefined,
         },
-        medicalHistory: medicalHistory || '',
-        interventions: selectedInterventions,
+        medicalHistory,
+        interventions: selected,
       });
       setTimeline(res.timeline);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setReloading(false);
-    }
+    } catch (err) { setError(String(err)); }
+    finally { setReloading(false); }
   }
 
   function toggleIntervention(id: string) {
     setActiveInterventions(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
     });
   }
 
-  const pastEvents = timeline?.filter(e => e.type === 'past') ?? [];
-  const presentEvent = timeline?.find(e => e.type === 'present');
-  const futureEvents = timeline?.filter(e => e.type === 'predicted' || e.type === 'warning' || e.type === 'intervention') ?? [];
-  const avoidsCount = futureEvents.filter(e => e.avoided).length;
+  const bmi = calcBMI();
+  const bmiNum = parseFloat(bmi);
 
   return (
     <div className="individual-page">
-      {/* LEFT: Patient Profile Form */}
+      {/* ── LEFT: Patient Form ──────────────────────────────── */}
       <div className="patient-form-panel">
         <div className="patient-form-header">
           <div>
             <h2 className="patient-form-title">Patient Profile</h2>
-            <p className="patient-form-subtitle">Enter demographics & medical history to generate an AI-powered health timeline</p>
+            <p className="patient-form-subtitle">Enter demographics & medical history to generate an AI health timeline</p>
           </div>
-          <button className="btn-mock" onClick={loadMockPatient} title="Load demo patient">
-            ⚡ Demo
-          </button>
+          <button className="btn-mock" onClick={loadMock}>⚡ Demo</button>
         </div>
 
         <div className="form-section">
@@ -201,7 +161,7 @@ export default function IndividualPage() {
             </div>
             <div className="form-field">
               <label className="field-label">Age</label>
-              <input className="field-input" type="number" min={1} max={120} placeholder="e.g. 52"
+              <input className="field-input" type="number" min={1} max={120} placeholder="52"
                 value={profile.age} onChange={e => setProfile(p => ({ ...p, age: e.target.value }))} />
             </div>
           </div>
@@ -236,19 +196,26 @@ export default function IndividualPage() {
             </div>
           </div>
 
-          {calcBMI() && (
+          {bmi && (
             <div className="bmi-badge">
-              BMI: <strong>{calcBMI()}</strong>
-              <span className={`bmi-label ${parseFloat(calcBMI()) >= 30 ? 'bmi-obese' : parseFloat(calcBMI()) >= 25 ? 'bmi-overweight' : 'bmi-normal'}`}>
-                {parseFloat(calcBMI()) >= 30 ? 'Obese' : parseFloat(calcBMI()) >= 25 ? 'Overweight' : 'Normal'}
+              BMI <strong>{bmi}</strong>
+              <span className={`bmi-label ${bmiNum >= 30 ? 'bmi-obese' : bmiNum >= 25 ? 'bmi-overweight' : 'bmi-normal'}`}>
+                {bmiNum >= 30 ? 'Obese' : bmiNum >= 25 ? 'Overweight' : 'Normal'}
               </span>
             </div>
           )}
 
-          <div className="form-field">
-            <label className="field-label">Ethnicity</label>
-            <input className="field-input" placeholder="e.g. African American"
-              value={profile.ethnicity} onChange={e => setProfile(p => ({ ...p, ethnicity: e.target.value }))} />
+          <div className="form-grid-2">
+            <div className="form-field">
+              <label className="field-label">Ethnicity</label>
+              <input className="field-input" placeholder="e.g. African American"
+                value={profile.ethnicity} onChange={e => setProfile(p => ({ ...p, ethnicity: e.target.value }))} />
+            </div>
+            <div className="form-field">
+              <label className="field-label">State</label>
+              <input className="field-input" placeholder="e.g. New York"
+                value={profile.state} onChange={e => setProfile(p => ({ ...p, state: e.target.value }))} />
+            </div>
           </div>
 
           <label className="smoker-toggle">
@@ -269,55 +236,50 @@ export default function IndividualPage() {
 
         <div className="form-section">
           <div className="form-label">MEDICAL RECORDS</div>
-
           <div className="upload-zone" onClick={() => fileInputRef.current?.click()}>
             <div className="upload-icon">📋</div>
             <div className="upload-text">Upload Medical Records (PDF)</div>
-            <div className="upload-sub">or click to select file — text will be extracted</div>
+            <div className="upload-sub">or click to select — text will be extracted</div>
             <input ref={fileInputRef} type="file" accept=".pdf,.txt" style={{ display: 'none' }}
               onChange={e => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                // For demo: if txt, read it; if PDF show placeholder
                 if (file.name.endsWith('.txt')) {
                   const reader = new FileReader();
                   reader.onload = ev => setMedicalHistory(ev.target?.result as string ?? '');
                   reader.readAsText(file);
                 } else {
-                  setMedicalHistory(`[PDF uploaded: ${file.name}]\nMedical records content would be extracted here.`);
+                  setMedicalHistory(`[PDF: ${file.name}]\nMedical records would be extracted here.`);
                 }
               }} />
           </div>
-
           <div className="form-field" style={{ marginTop: 8 }}>
-            <label className="field-label">Or paste / type medical history</label>
+            <label className="field-label">Or paste medical history</label>
             <textarea className="field-input field-textarea field-textarea-tall"
               placeholder="Paste clinical notes, diagnoses, medications, lab results..."
-              value={medicalHistory}
-              onChange={e => setMedicalHistory(e.target.value)} />
+              value={medicalHistory} onChange={e => setMedicalHistory(e.target.value)} />
           </div>
         </div>
 
         {error && <div className="timeline-error">{error}</div>}
 
         <button className="btn-generate" onClick={handleGenerate} disabled={loading}>
-          {loading ? (
-            <><div className="btn-spinner" /> Analyzing with Claude AI...</>
-          ) : (
-            <>✦ Generate Health Timeline</>
-          )}
+          {loading ? <><div className="btn-spinner" />Analyzing with Claude AI…</> : <>✦ Generate Health Timeline</>}
         </button>
       </div>
 
-      {/* RIGHT: Timeline */}
+      {/* ── RIGHT: Timeline Panel ───────────────────────────── */}
       <div className="timeline-panel">
         {!timeline && !loading && (
           <div className="timeline-empty">
             <div className="timeline-empty-icon">⏱</div>
             <div className="timeline-empty-title">Your patient timeline will appear here</div>
-            <div className="timeline-empty-sub">Fill in the patient profile and click "Generate Health Timeline" — Claude AI will analyze the records and project a personalized chronological timeline with future predictions.</div>
-            <button className="btn-mock-large" onClick={loadMockPatient}>
-              ⚡ Load Demo Patient & Generate
+            <div className="timeline-empty-sub">
+              Fill in the profile and click "Generate Health Timeline" — Claude AI will analyze the records
+              and map a personalized chronological timeline with risk similarity analysis.
+            </div>
+            <button className="btn-mock-large" onClick={() => { loadMock(); }}>
+              ⚡ Load Demo Patient
             </button>
           </div>
         )}
@@ -325,74 +287,94 @@ export default function IndividualPage() {
         {loading && (
           <div className="timeline-loading">
             <div className="loading-orb" />
-            <div className="loading-title">Analyzing patient data...</div>
-            <div className="loading-sub">Claude AI is reading the medical records and building a personalized timeline</div>
+            <div className="loading-title">Analyzing patient data…</div>
+            <div className="loading-sub">Claude AI is reading the medical records and building a personalized health timeline</div>
           </div>
         )}
 
         {timeline && (
           <>
+            {/* Header */}
             <div className="timeline-header">
               <div>
                 <h2 className="timeline-patient-name">{profile.name}'s Health Timeline</h2>
                 <p className="timeline-patient-meta">
-                  {profile.age}yo · {profile.sex} · BMI {calcBMI() || '—'}
-                  {avoidsCount > 0 && (
-                    <span className="avoided-badge">✓ {avoidsCount} outcome{avoidsCount > 1 ? 's' : ''} improved by interventions</span>
+                  {profile.age}yo · {profile.sex} · {profile.ethnicity || 'Patient'}
+                  {profile.state && <> · {profile.state}</>}
+                  {activeInterventions.size > 0 && timeline.some(e => e.avoided) && (
+                    <span className="avoided-badge">✓ Risk profile improved with {activeInterventions.size} intervention{activeInterventions.size > 1 ? 's' : ''}</span>
                   )}
                 </p>
               </div>
+              <button className="btn-simulate-interventions"
+                onClick={() => setShowInterventionPanel(p => !p)}>
+                {showInterventionPanel ? '✕ Close' : '⚕ Simulate Preventions'}
+              </button>
             </div>
 
-            {/* Interventions Panel */}
-            <div className="intervention-strip">
-              <div className="intervention-strip-label">APPLY INTERVENTIONS</div>
-              <div className="intervention-chips">
-                {INTERVENTIONS.map(intv => (
-                  <button key={intv.id}
-                    className={`intervention-chip${activeInterventions.has(intv.id) ? ' active' : ''}`}
-                    onClick={() => toggleIntervention(intv.id)}
-                    title={intv.description}>
-                    {activeInterventions.has(intv.id) ? '✓ ' : ''}{intv.name}
+            {/* Similarity Score Card */}
+            {similarity && (
+              <div className="similarity-card">
+                <div className="similarity-left">
+                  <div className="similarity-score-ring">
+                    <svg viewBox="0 0 80 80" style={{ position: 'absolute', inset: 0 }}>
+                      <circle cx="40" cy="40" r="33" fill="none" stroke="rgba(255,155,61,0.15)" strokeWidth="6" />
+                      <circle cx="40" cy="40" r="33" fill="none" stroke="#FF9B3D" strokeWidth="6"
+                        strokeDasharray={`${2 * Math.PI * 33}`}
+                        strokeDashoffset={`${2 * Math.PI * 33 * (1 - similarity.score / 100)}`}
+                        strokeLinecap="round" transform="rotate(-90 40 40)" />
+                    </svg>
+                    <span className="similarity-score-num">{similarity.score}%</span>
+                  </div>
+                  <div className="similarity-label-block">
+                    <div className="similarity-headline">Risk Profile Similarity</div>
+                    <div className="similarity-subhead">
+                      to confirmed diabetes cases in {similarity.county.name}, {similarity.county.state}
+                    </div>
+                  </div>
+                </div>
+                <div className="similarity-stats">
+                  <div className="sim-stat">
+                    <span className="sim-stat-val">{similarity.countyDiabetesRate}%</span>
+                    <span className="sim-stat-label">County diabetes rate</span>
+                  </div>
+                  <div className="sim-stat">
+                    <span className="sim-stat-val">{similarity.countyObesityRate}%</span>
+                    <span className="sim-stat-label">County obesity rate</span>
+                  </div>
+                  <div className="sim-stat">
+                    <span className="sim-stat-val">{(similarity.population / 1000).toFixed(0)}k</span>
+                    <span className="sim-stat-label">Reference population</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Intervention Simulation Panel */}
+            {showInterventionPanel && (
+              <div className="intervention-sim-panel">
+                <div className="intervention-strip-label">SELECT PREVENTIVE INTERVENTIONS TO SIMULATE</div>
+                <div className="intervention-chips">
+                  {INTERVENTIONS.map(intv => (
+                    <button key={intv.id}
+                      className={`intervention-chip${activeInterventions.has(intv.id) ? ' active' : ''}`}
+                      onClick={() => toggleIntervention(intv.id)} title={intv.description}>
+                      {activeInterventions.has(intv.id) ? '✓ ' : ''}{intv.name}
+                    </button>
+                  ))}
+                </div>
+                {activeInterventions.size > 0 && (
+                  <button className="btn-reevaluate" onClick={handleSimulateInterventions} disabled={reloading}>
+                    {reloading
+                      ? <><div className="btn-spinner btn-spinner-sm" />Re-evaluating risk profile…</>
+                      : `↺ Apply ${activeInterventions.size} intervention${activeInterventions.size > 1 ? 's' : ''} & re-evaluate`}
                   </button>
-                ))}
+                )}
               </div>
-              {activeInterventions.size > 0 && (
-                <button className="btn-reevaluate" onClick={handleApplyInterventions} disabled={reloading}>
-                  {reloading ? <><div className="btn-spinner btn-spinner-sm" /> Re-evaluating...</> : `↺ Re-evaluate with ${activeInterventions.size} intervention${activeInterventions.size > 1 ? 's' : ''}`}
-                </button>
-              )}
-            </div>
+            )}
 
-            {/* The actual timeline */}
-            <div className="timeline-scroll">
-              <div className="timeline-track">
-
-                {/* PAST */}
-                {pastEvents.length > 0 && (
-                  <div className="timeline-era-label">PAST HISTORY</div>
-                )}
-                {pastEvents.map((ev, i) => (
-                  <TimelineCard key={`past-${i}`} event={ev} />
-                ))}
-
-                {/* PRESENT */}
-                {presentEvent && (
-                  <>
-                    <div className="timeline-era-label timeline-now-label">NOW — AGE {presentEvent.age}</div>
-                    <TimelineCard event={presentEvent} />
-                  </>
-                )}
-
-                {/* FUTURE */}
-                {futureEvents.length > 0 && (
-                  <div className="timeline-era-label timeline-future-label">PROJECTED FUTURE</div>
-                )}
-                {futureEvents.map((ev, i) => (
-                  <TimelineCard key={`future-${i}`} event={ev} />
-                ))}
-              </div>
-            </div>
+            {/* 2D Horizontal Timeline Canvas */}
+            <HorizontalTimeline events={timeline} />
           </>
         )}
       </div>
@@ -400,30 +382,197 @@ export default function IndividualPage() {
   );
 }
 
-function TimelineCard({ event: ev }: { event: TimelineEvent }) {
-  const cfg = TYPE_CONFIG[ev.type] ?? TYPE_CONFIG.past;
+// ── 2D Horizontal Draggable Timeline ──────────────────────────────────────
+const NODE_GAP = 180;
+const CANVAS_PADDING = 80;
+const LINE_Y = 220;
+
+
+function HorizontalTimeline({ events }: { events: TimelineEvent[] }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [offsetX, setOffsetX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, offset: 0 });
+  const [hovered, setHovered] = useState<{ event: TimelineEvent; nodeX: number } | null>(null);
+
+  const canvasWidth = Math.max(900, CANVAS_PADDING * 2 + (events.length - 1) * NODE_GAP);
+
+  // Center the "present" node on initial load
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const presentIdx = events.findIndex(e => e.type === 'present');
+    const idx = presentIdx >= 0 ? presentIdx : Math.floor(events.length / 2);
+    const nodeX = CANVAS_PADDING + idx * NODE_GAP;
+    const containerW = containerRef.current.clientWidth;
+    setOffsetX(containerW / 2 - nodeX);
+  }, [events]);
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, offset: offsetX });
+    setHovered(null);
+  }, [offsetX]);
+
+  const onMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging) return;
+    const delta = e.clientX - dragStart.x;
+    setOffsetX(dragStart.offset + delta);
+  }, [isDragging, dragStart]);
+
+  const onMouseUp = useCallback(() => setIsDragging(false), []);
+
+  // Clamp offset to keep timeline within reasonable bounds
+  const clampedOffset = Math.min(
+    CANVAS_PADDING,
+    Math.max(-(canvasWidth - (containerRef.current?.clientWidth ?? 900) + CANVAS_PADDING), offsetX)
+  );
+
   return (
-    <div className={`timeline-card${ev.avoided ? ' timeline-card-avoided' : ''}`}
-      style={{ borderColor: cfg.border, background: cfg.bg }}>
-      <div className="timeline-card-side">
-        <div className="timeline-dot" style={{ background: cfg.dot, boxShadow: `0 0 8px ${cfg.dot}80` }} />
-        <div className="timeline-line" />
+    <div className="timeline-canvas-wrapper"
+      ref={containerRef}
+      style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={onMouseUp}>
+
+      {/* Dot grid background */}
+      <svg className="timeline-grid" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+        <defs>
+          <pattern id="dot-grid" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+            <circle cx="1" cy="1" r="1" fill="rgba(255,255,255,0.04)" />
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#dot-grid)" />
+      </svg>
+
+      {/* Era labels — fixed, not scrolling */}
+      <div className="era-labels">
+        {['◀  HISTORY', 'NOW', 'RISK PROFILE  ▶'].map((label, i) => (
+          <div key={label} className={`era-label ${i === 1 ? 'era-label-now' : i === 2 ? 'era-label-future' : ''}`}>{label}</div>
+        ))}
       </div>
-      <div className="timeline-card-body">
-        <div className="timeline-card-meta">
-          <span className="timeline-age" style={{ color: cfg.color }}>Age {ev.age}</span>
-          <span className="timeline-year">{ev.year}</span>
-          <span className="timeline-type-badge" style={{ color: cfg.color, borderColor: cfg.border }}>{cfg.label}</span>
-          <span className="timeline-category-icon" title={ev.category}>{CATEGORY_ICON[ev.category] ?? '📌'}</span>
-          <span className="timeline-severity" title={`Severity: ${ev.severity}`}>{SEVERITY_ICON[ev.severity]}</span>
-        </div>
-        <div className={`timeline-card-title${ev.avoided ? ' timeline-title-avoided' : ''}`} style={ ev.avoided ? {} : { color: cfg.color === '#6B7A99' ? 'var(--text-primary)' : cfg.color }}>
-          {ev.avoided && <span className="avoided-strike">⟶ </span>}
-          {ev.title}
-          {ev.avoided && <span className="avoided-tag"> AVOIDED</span>}
-        </div>
-        <div className="timeline-card-desc">{ev.description}</div>
+
+      {/* Scrollable canvas */}
+      <div className="timeline-inner-canvas"
+        style={{ transform: `translateX(${clampedOffset}px)`, width: canvasWidth }}>
+
+        {/* Gradient line */}
+        <svg style={{ position: 'absolute', top: LINE_Y - 1, left: 0, width: canvasWidth, height: 3, pointerEvents: 'none' }}>
+          <defs>
+            <linearGradient id="line-grad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#3D4A6E" stopOpacity="0.4" />
+              <stop offset="40%" stopColor="#5B6A90" stopOpacity="0.9" />
+              <stop offset="60%" stopColor="#00D4AA" stopOpacity="1" />
+              <stop offset="80%" stopColor="#FF9B3D" stopOpacity="0.9" />
+              <stop offset="100%" stopColor="#FF5757" stopOpacity="0.6" />
+            </linearGradient>
+          </defs>
+          <line x1="0" y1="1.5" x2={canvasWidth} y2="1.5" stroke="url(#line-grad)" strokeWidth="2" />
+        </svg>
+
+        {/* Nodes */}
+        {events.map((ev, i) => {
+          const x = CANVAS_PADDING + i * NODE_GAP;
+          const isHovered = hovered?.event === ev;
+          const isWarning = ev.severity === 'critical' || ev.type === 'warning';
+          const isFuture = ev.type === 'risk' || ev.type === 'predicted' || ev.type === 'warning';
+          const cfg = NODE_CONFIG[ev.type as keyof typeof NODE_CONFIG] ?? NODE_CONFIG.past;
+          const size = SEVERITY_SIZE[ev.severity] ?? 32;
+
+          return (
+            <div key={`${ev.age}-${i}`}
+              className="timeline-node-wrap"
+              style={{ left: x - size / 2, top: LINE_Y - size / 2 }}
+              onMouseEnter={() => !isDragging && setHovered({ event: ev, nodeX: x })}
+              onMouseLeave={() => setHovered(null)}>
+
+              {/* Avoided ribbon */}
+              {ev.avoided && (
+                <div className="node-avoided-ribbon">AVOIDED</div>
+              )}
+
+              {/* Triangle for critical/warning, circle otherwise */}
+              {isWarning && isFuture ? (
+                <div className="node-triangle"
+                  style={{
+                    width: size + 10, height: size + 10,
+                    filter: isHovered ? `drop-shadow(0 0 12px ${cfg.border})` : 'none',
+                    opacity: ev.avoided ? 0.4 : 1,
+                  }}>
+                  <svg viewBox="0 0 52 52" style={{ width: '100%', height: '100%' }}>
+                    <polygon points="26,4 50,48 2,48"
+                      fill={ev.avoided ? 'rgba(0,212,170,0.15)' : cfg.fill}
+                      stroke={ev.avoided ? '#00D4AA' : cfg.border}
+                      strokeWidth="2" />
+                    <text x="26" y="38" textAnchor="middle" fill={ev.avoided ? '#00D4AA' : cfg.border}
+                      fontSize="18" fontWeight="bold">!</text>
+                  </svg>
+                </div>
+              ) : (
+                <div className={`node-circle${isHovered ? ' node-circle-hovered' : ''}${ev.type === 'present' ? ' node-present' : ''}`}
+                  style={{
+                    width: size, height: size,
+                    background: ev.avoided ? 'rgba(0,212,170,0.1)' : cfg.fill,
+                    border: `2px solid ${ev.avoided ? '#00D4AA' : cfg.border}`,
+                    boxShadow: isHovered ? `0 0 18px ${ev.avoided ? 'rgba(0,212,170,0.5)' : cfg.glow}` : ev.type === 'present' ? `0 0 14px ${cfg.glow}` : 'none',
+                    opacity: ev.avoided ? 0.6 : 1,
+                  }}>
+                  {ev.type === 'present' && <div className="node-pulse-ring" style={{ borderColor: cfg.border }} />}
+                </div>
+              )}
+
+              {/* Age label below */}
+              <div className="node-age-label" style={{ color: cfg.border }}>
+                {ev.avoided ? '~~' : ''}Age {ev.age}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Hover tooltip — renders inside scrolling container so position is correct */}
+        {hovered && (
+          <TimelineTooltip event={hovered.event} nodeX={hovered.nodeX} />
+        )}
       </div>
+
+      {/* Scroll hint */}
+      <div className="timeline-scroll-hint">← drag to explore →</div>
+    </div>
+  );
+}
+
+// ── Tooltip Card ───────────────────────────────────────────────────────────
+function TimelineTooltip({ event: ev, nodeX }: { event: TimelineEvent; nodeX: number }) {
+  const cfg = NODE_CONFIG[ev.type as keyof typeof NODE_CONFIG] ?? NODE_CONFIG.past;
+  const isFuture = ev.type === 'risk' || ev.type === 'predicted' || ev.type === 'warning';
+
+  return (
+    <div className="timeline-tooltip"
+      style={{
+        left: nodeX - 140,
+        top: LINE_Y - 230,
+        borderColor: ev.avoided ? '#00D4AA' : cfg.border,
+        background: 'rgba(8,14,28,0.97)',
+      }}>
+      <div className="tooltip-header">
+        <span className="tooltip-type-badge"
+          style={{ color: ev.avoided ? '#00D4AA' : cfg.border, borderColor: ev.avoided ? 'rgba(0,212,170,0.3)' : cfg.border + '50' }}>
+          {ev.avoided ? 'AVOIDED' : cfg.label}
+        </span>
+        <span className="tooltip-age" style={{ color: cfg.border }}>Age {ev.age} · {ev.year}</span>
+      </div>
+      <div className="tooltip-title" style={{ color: ev.avoided ? 'var(--text-secondary)' : 'var(--text-primary)',
+        textDecoration: ev.avoided ? 'line-through' : 'none' }}>
+        {ev.title}
+      </div>
+      <div className="tooltip-desc">{ev.description}</div>
+      {isFuture && !ev.avoided && (
+        <div className="tooltip-risk-note">
+          📊 Based on statistical comparison with similar patient profiles in this demographic
+        </div>
+      )}
+      <div className="tooltip-tail" style={{ borderTopColor: ev.avoided ? '#00D4AA' : cfg.border }} />
     </div>
   );
 }

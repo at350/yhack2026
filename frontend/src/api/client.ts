@@ -102,13 +102,40 @@ export async function generatePatientTimeline(body: {
   return res.json() as Promise<{ timeline: TimelineEvent[] }>;
 }
 
+export async function getSimilarityScore(profile: {
+  age: number;
+  sex: string;
+  ethnicity: string;
+  bmi: string;
+  smoker: boolean;
+  state: string;
+}): Promise<SimilarityResult> {
+  const res = await fetch(`${API_BASE}/ai/similarity-score`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export interface SimilarityResult {
+  score: number;
+  county: { name: string; state: string; fips: string };
+  countyDiabetesRate: number;
+  countyObesityRate: number;
+  countySmokingRate: number;
+  population: number;
+}
+
 export interface TimelineEvent {
   age: number;
   year: number;
-  type: 'past' | 'present' | 'predicted' | 'intervention' | 'warning';
+  type: 'past' | 'present' | 'predicted' | 'intervention' | 'warning' | 'risk';
   title: string;
   description: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
   category: string;
   avoided: boolean;
 }
+
