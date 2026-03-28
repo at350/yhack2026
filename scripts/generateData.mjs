@@ -1,4 +1,4 @@
-// generateData.mjs — Generates synthetic county health data for PulsePolicy
+// generateData.mjs — Generates synthetic county health data for Prophis
 // Run: node scripts/generateData.mjs
 import fs from 'fs';
 import path from 'path';

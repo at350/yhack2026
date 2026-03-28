@@ -1,19 +1,20 @@
 import { Router } from 'express';
-import OpenAI from 'openai';
 
 const router = Router();
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const LAVA_FORWARD_URL = 'https://api.lavapayments.com/v1/forward?u=https://api.anthropic.com/v1/messages';
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4.5-preview';
+function getLavaToken(): string {
+  const token = process.env.LAVA_FORWARD_TOKEN;
+  if (!token) throw new Error('LAVA_FORWARD_TOKEN is not set in environment');
+  return token;
+}
 
-// POST /api/ai/summarize — streaming summary
+// POST /api/ai/summarize — streaming summary via Claude + Lava
 router.post('/summarize', async (req, res) => {
   try {
     const { simulationSummary, interventions, objective, countyCount } = req.body;
-
     const prompt = buildPrompt(simulationSummary, interventions, objective, countyCount);
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -21,55 +22,100 @@ router.post('/summarize', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
-    const stream = await openai.chat.completions.create({
-      model: MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: `You are a public health policy expert and data scientist. You analyze simulation results from PulsePolicy, a decision-support tool for public health interventions. Your summaries are clear, evidence-based, and equity-focused. Write in a professional but accessible tone. Use specific numbers from the data. Structure your response with clear sections.`,
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      max_tokens: 800,
-      stream: true,
+    const claudeRes = await fetch(LAVA_FORWARD_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getLavaToken()}`,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 1024,
+        stream: true,
+        system: `You are a public health policy expert and data scientist. You analyze simulation results from Prophis, a decision-support tool for public health interventions. Your summaries are clear, evidence-based, and equity-focused. Write in a professional but accessible tone. Use specific numbers from the data. Structure your response with clear sections.`,
+        messages: [{ role: 'user', content: prompt }],
+      }),
     });
 
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content || '';
-      if (content) {
-        res.write(`data: ${JSON.stringify({ content })}\n\n`);
+    if (!claudeRes.ok || !claudeRes.body) {
+      const errText = await claudeRes.text();
+      res.write(`data: ${JSON.stringify({ error: `Claude API error: ${claudeRes.status} ${errText}` })}\n\n`);
+      res.end();
+      return;
+    }
+
+    const reader = claudeRes.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? ''; // keep incomplete last line
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const raw = line.slice(6).trim();
+          if (raw === '[DONE]' || !raw) continue;
+          try {
+            const event = JSON.parse(raw);
+            // Claude streaming events: content_block_delta carries text
+            if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+              const text = event.delta.text ?? '';
+              if (text) res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
+            }
+            if (event.type === 'message_stop') {
+              res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+            }
+          } catch { /* skip malformed lines */ }
+        }
       }
     }
 
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
   } catch (err: unknown) {
-    console.error('OpenAI error:', err);
+    console.error('Claude/Lava error:', err);
     res.write(`data: ${JSON.stringify({ error: String(err) })}\n\n`);
     res.end();
   }
 });
 
-// POST /api/ai/insight — quick single insight (non-streaming)
+// POST /api/ai/insight — non-streaming quick insight
 router.post('/insight', async (req, res) => {
   try {
     const { county, metric, value, percentile } = req.body;
-    const response = await openai.chat.completions.create({
-      model: MODEL,
-      messages: [
-        {
+
+    const claudeRes = await fetch(LAVA_FORWARD_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getLavaToken()}`,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 150,
+        messages: [{
           role: 'user',
           content: `In 2 sentences, explain the public health significance of ${county} having a ${metric} rate of ${value}% (${percentile}th percentile nationally). Focus on impact and actionable framing.`,
-        },
-      ],
-      max_tokens: 100,
+        }],
+      }),
     });
-    res.json({ insight: response.choices[0]?.message?.content });
+
+    if (!claudeRes.ok) {
+      const err = await claudeRes.text();
+      return res.status(claudeRes.status).json({ error: err });
+    }
+
+    const data = await claudeRes.json() as { content: Array<{ text: string }> };
+    return res.json({ insight: data.content[0]?.text ?? '' });
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    return res.status(500).json({ error: String(err) });
   }
 });
 

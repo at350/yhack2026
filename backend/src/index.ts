@@ -24,7 +24,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🚀 PulsePolicy API running on http://localhost:${PORT}\n`);
+  console.log(`\n🚀 Prophis API running on http://localhost:${PORT}\n`);
 });
 
 export default app;

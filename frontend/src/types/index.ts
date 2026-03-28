@@ -1,4 +1,4 @@
-// TypeScript types for PulsePolicy
+// TypeScript types for Prophis
 export interface CountyRecord {
   fips: string;
   name: string;
