@@ -27,6 +27,11 @@ export default function USMap() {
   // Build county lookup map
   const countyByFips = useMemo(() => new Map(counties.map(c => [c.fips, c])), [counties]);
 
+  // Keep a ref so D3 event handlers always read the latest map without needing re-render.
+  // This prevents the stale-closure bug where hovering Utah showed Idaho data.
+  const countyByFipsRef = useRef(countyByFips);
+  useEffect(() => { countyByFipsRef.current = countyByFips; }, [countyByFips]);
+
   // Load TopoJSON
   useEffect(() => {
     d3.json(TOPO_URL).then(data => setTopoData(data as object)).catch(console.error);
@@ -46,7 +51,6 @@ export default function USMap() {
   // Color scale
   const colorScale = useMemo(() => {
     if (mapMode === 'impact' && resultsByFips.size > 0) {
-      // Impact mode: center on 0, green=better, red=worse
       const changes = Array.from(resultsByFips.values())
         .map(r => r.absoluteChange[selectedMetric] ?? 0);
       const extent = Math.max(Math.abs(d3.min(changes) ?? 0), Math.abs(d3.max(changes) ?? 0), 0.1);
@@ -54,8 +58,8 @@ export default function USMap() {
         .domain([-extent, 0, extent])
         .interpolator(d3.interpolateRgbBasis(
           selectedMetric === 'checkups'
-            ? ['#FF6B6B', '#3D8EFF', '#00D4AA'] // checkups: improvement = right
-            : ['#00D4AA', '#3D8EFF', '#FF6B6B']  // disease metrics: improvement = left
+            ? ['#FF6B6B', '#3D8EFF', '#00D4AA']
+            : ['#00D4AA', '#3D8EFF', '#FF6B6B']
         ));
     }
     if (mapMode === 'vulnerability') {
@@ -68,7 +72,6 @@ export default function USMap() {
         .domain([0, 30])
         .interpolator(d3.interpolateRgbBasis(['#00D4AA', '#FFB84D', '#FF6B6B']));
     }
-    // Baseline: quintile sequential
     const values = counties.map(c => (c.health as Record<string, number>)[selectedMetric]).filter(Boolean);
     const [lo, hi] = d3.extent(values) as [number, number];
     const isPositiveMetric = selectedMetric === 'checkups';
@@ -100,16 +103,15 @@ export default function USMap() {
     return (colorScale as d3.ScaleSequential<string, never>)(val);
   }, [countyByFips, selectedMetric, mapMode, resultsByFips, colorScale]);
 
-  // Render D3 map
+  // Render D3 map — only re-runs when topo/dimensions change, NOT on data updates
   useEffect(() => {
-    if (!topoData || !svgRef.current || counties.length === 0) return;
+    if (!topoData || !svgRef.current || !containerRef.current) return;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
 
     const { w, h } = dimensions;
 
-    // Scale to fit container (atlas is 975x610)
     const scaleX = w / 975;
     const scaleY = h / 610;
     const scale = Math.min(scaleX, scaleY);
@@ -117,12 +119,13 @@ export default function USMap() {
     const ty = (h - 610 * scale) / 2;
 
     const g = svg.append('g').attr('transform', `translate(${tx},${ty}) scale(${scale})`);
-
     const path = d3.geoPath(null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const us = topoData as any;
 
     // Draw counties
+    // IMPORTANT: handlers read from countyByFipsRef (not countyByFips directly)
+    // to avoid stale closures that caused the wrong county tooltip bug.
     g.selectAll<SVGPathElement, GeoJSON.Feature>('.county-path')
       .data((topojson.feature(us, us.objects.counties) as unknown as GeoJSON.FeatureCollection).features)
       .enter()
@@ -132,9 +135,12 @@ export default function USMap() {
       .attr('fill', d => getCountyColor(String(d.id).padStart(5, '0')))
       .on('mousemove', function (event, d) {
         const fips = String(d.id).padStart(5, '0');
-        const county = countyByFips.get(fips) ?? null;
+        // Read from ref so this always reflects the latest loaded county data
+        const county = countyByFipsRef.current.get(fips) ?? null;
         setHoveredFips(fips);
-        setTooltip({ x: event.clientX, y: event.clientY, county, visible: true });
+        // Use container-relative coords to avoid viewport drift issues
+        const rect = containerRef.current!.getBoundingClientRect();
+        setTooltip({ x: event.clientX - rect.left, y: event.clientY - rect.top, county, visible: true });
       })
       .on('mouseleave', function () {
         setHoveredFips(null);
@@ -142,7 +148,7 @@ export default function USMap() {
       })
       .on('click', (_, d) => {
         const fips = String(d.id).padStart(5, '0');
-        const county = countyByFips.get(fips) ?? null;
+        const county = countyByFipsRef.current.get(fips) ?? null;
         if (county) setSelectedCounty(county);
       });
 
@@ -152,7 +158,9 @@ export default function USMap() {
       .attr('class', 'state-mesh')
       .attr('d', path);
 
-  }, [topoData, dimensions, getCountyColor, countyByFips, setHoveredFips, setSelectedCounty]);
+  // Deliberately omit countyByFipsRef from deps — it's a ref, always current
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topoData, dimensions, getCountyColor, setHoveredFips, setSelectedCounty]);
 
   // Update county colors without full re-render
   useEffect(() => {
@@ -163,7 +171,7 @@ export default function USMap() {
   }, [getCountyColor]);
 
   return (
-    <div ref={containerRef} className="map-container">
+    <div ref={containerRef} className="map-container" style={{ position: 'relative' }}>
       {counties.length === 0 && (
         <div style={{
           position: 'absolute', inset: 0, display: 'flex',

@@ -69,7 +69,7 @@ export default function AIPanel() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div className="panel-title">🤖 AI Policy Analyst</div>
-            <div className="panel-subtitle">Claude 3.6 Sonnet · Simulation insights</div>
+            <div className="panel-subtitle">Claude 4.6 Sonnet · Simulation insights</div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             {hasLoaded && (

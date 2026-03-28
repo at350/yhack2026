@@ -682,7 +682,7 @@ select:focus { border-color: var(--accent-primary); }
 
 /* ── Tooltip ─────────────────────────────────────────── */
 .map-tooltip {
-  position: fixed;
+  position: absolute;
   pointer-events: none;
   z-index: 1000;
   background: var(--bg-elevated);
