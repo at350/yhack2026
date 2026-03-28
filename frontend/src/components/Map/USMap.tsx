@@ -3,7 +3,7 @@ import * as d3 from 'd3';
 import * as topojson from 'topojson-client';
 import { useStore } from '../../store/useStore';
 import type { CountyRecord } from '../../types';
-import { HEALTH_METRIC_LABELS, HEALTH_METRIC_UNITS } from '../../types';
+
 import CountyTooltip from './CountyTooltip';
 import MapLegend from './MapLegend';
 import CountyModal from '../Regional/CountyModal';
@@ -123,8 +123,8 @@ export default function USMap() {
     const us = topoData as any;
 
     // Draw counties
-    g.selectAll<SVGPathElement, topojson.Feature>('.county-path')
-      .data((topojson.feature(us, us.objects.counties) as GeoJSON.FeatureCollection).features)
+    g.selectAll<SVGPathElement, GeoJSON.Feature>('.county-path')
+      .data((topojson.feature(us, us.objects.counties) as unknown as GeoJSON.FeatureCollection).features)
       .enter()
       .append('path')
       .attr('class', 'county-path')

@@ -36,7 +36,7 @@ export default function App() {
         <a className="logo" href="#">
           <div className="logo-icon">💉</div>
           <span>
-            Pulse<span className="text-gradient">Policy</span>
+            Pro<span className="text-gradient">phis</span>
           </span>
         </a>
 

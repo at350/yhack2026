@@ -11,6 +11,12 @@ function getLavaToken(): string {
   return token;
 }
 
+function getLavaSecret(): string {
+  const secret = process.env.LAVA_SECRET_KEY;
+  if (!secret) throw new Error('LAVA_SECRET_KEY is not set in environment');
+  return secret;
+}
+
 // POST /api/ai/summarize — streaming summary via Claude + Lava
 router.post('/summarize', async (req, res) => {
   try {
@@ -27,13 +33,14 @@ router.post('/summarize', async (req, res) => {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${getLavaToken()}`,
+        'x-api-key': getLavaSecret(),
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
         model: CLAUDE_MODEL,
         max_tokens: 1024,
         stream: true,
-        system: `You are a public health policy expert and data scientist. You analyze simulation results from Prophis, a decision-support tool for public health interventions. Your summaries are clear, evidence-based, and equity-focused. Write in a professional but accessible tone. Use specific numbers from the data. Structure your response with clear sections.`,
+        system: `You are a public health policy expert and data scientist. You analyze simulation results from PulsePolicy, a decision-support tool for public health interventions. Your summaries are clear, evidence-based, and equity-focused. Write in a professional but accessible tone. Use specific numbers from the data. Structure your response with clear sections.`,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
@@ -95,6 +102,7 @@ router.post('/insight', async (req, res) => {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${getLavaToken()}`,
+        'x-api-key': getLavaSecret(),
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
@@ -119,14 +127,14 @@ router.post('/insight', async (req, res) => {
   }
 });
 
-function buildPrompt(summary: Record<string, unknown>, interventions: unknown[], objective: string, countyCount: number): string {
+function buildPrompt(summary: Record<string, unknown>, interventions: Record<string, unknown>[], objective: string, countyCount: number): string {
   return `
 Analyze the following public health simulation results and write a comprehensive policy summary.
 
 **Objective:** ${objective || 'General public health improvement'}
 
 **Interventions Selected:**
-${Array.isArray(interventions) ? interventions.map((i: Record<string, unknown>) => `- ${i.name || i.id}: $${Number(i.budget || 0).toLocaleString()} budget, targeting ${i.targeting || 'all populations'}`).join('\n') : 'None specified'}
+${Array.isArray(interventions) ? interventions.map((i) => `- ${i.name || i.id}: $${Number(i.budget || 0).toLocaleString()} budget, targeting ${i.targeting || 'all populations'}`).join('\n') : 'None specified'}
 
 **Simulation Results (${countyCount} counties analyzed):**
 - Total QALYs Gained: ${summary?.totalQalysGained?.toLocaleString?.() || 'N/A'}

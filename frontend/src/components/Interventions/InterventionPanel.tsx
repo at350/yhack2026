@@ -17,7 +17,7 @@ export default function InterventionPanel() {
     interventions, activeInterventions, addIntervention, removeIntervention,
     updateIntervention, budgetTotal, setBudgetTotal, targeting, setTargeting,
     timeHorizon, setTimeHorizon, objective, setObjective,
-    isSimulating, clearInterventions,
+    clearInterventions,
   } = useStore();
 
   const [filterCat, setFilterCat] = useState('All');
