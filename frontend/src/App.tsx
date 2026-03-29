@@ -138,7 +138,7 @@ export default function App() {
           // The CHR dataset includes both the legacy county stubs (09001–09015, which
           // lack demographics/behavioral metrics) and the new planning regions
           // (09110–09190, which have full data). Drop the stubs to avoid zero-filled records.
-          .filter((raw: any) => !(raw.state === 'Connecticut' && parseInt(raw.fips) < 9100))
+          .filter((raw: Record<string, unknown>) => !(raw.state === 'Connecticut' && parseInt(String(raw.fips)) < 9100))
           .map(transformCounty)
       ))
       .catch(console.error);
