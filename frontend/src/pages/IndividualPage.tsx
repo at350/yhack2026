@@ -29,39 +29,6 @@ const MOCK_HISTORY = `PATIENT MEDICAL RECORD — Marcus Williams, DOB 1973-04-12
 - 2023 (Age 50): Peripheral neuropathy symptoms. Early diabetic retinopathy bilateral.
 - 2025 (Age 52): Current. HbA1c 8.6%. BP 152/96 on medication. Active smoker. Sedentary.`;
 
-const INTERVENTIONS = [
-  {
-    id: 'smoking_cessation',
-    name: 'Smoking Cessation Program',
-    description: 'Structured counseling, nicotine replacement, and pharmacotherapy to achieve cessation within 90 days.',
-  },
-  {
-    id: 'diabetes_management',
-    name: 'Intensive Diabetes Management',
-    description: 'Medication optimization, CGM support, diet coaching, and tighter HbA1c follow-up.',
-  },
-  {
-    id: 'cardiac_rehab',
-    name: 'Cardiac Rehabilitation',
-    description: 'Supervised exercise, medication adherence coaching, and dietary support after cardiac events.',
-  },
-  {
-    id: 'hypertension_control',
-    name: 'Hypertension Control Protocol',
-    description: 'Home BP monitoring, medication titration, and low-sodium counseling with monthly review.',
-  },
-  {
-    id: 'nutrition_counseling',
-    name: 'Medical Nutrition Therapy',
-    description: 'Dietitian-guided nutrition planning aimed at sustained weight and glucose improvement.',
-  },
-  {
-    id: 'physical_activity',
-    name: 'Structured Physical Activity',
-    description: 'Clinician-guided exercise plan with weekly movement targets and adherence tracking.',
-  },
-] as const;
-
 const ETHNICITY_OPTIONS = [
   { label: "Hispanic / Latino", value: "Hispanic (All Races)" },
   { label: "American Indian / Alaska Native", value: "Non-Hispanic American Indian / Alaska Native" },
@@ -99,9 +66,6 @@ export default function IndividualPage() {
   const [error, setError] = useState<string | null>(null);
   const [insight, setInsight] = useState<DemographicInsight | null>(null);
   const [showInsights, setShowInsights] = useState(false);
-  const [activeInterventions, setActiveInterventions] = useState<Set<string>>(new Set());
-  const [showInterventionPanel, setShowInterventionPanel] = useState(false);
-  const [reloading, setReloading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const counties = useStore(s => s.counties);
   const setPatientContext = useStore(s => s.setPatientContext);
@@ -145,8 +109,6 @@ export default function IndividualPage() {
     if (!profile.age || !profile.name) { setError('Please enter a patient name and age.'); return; }
     setLoading(true); setError(null); setTimeline(null); setSimilarity(null);
     setInsight(null); setShowInsights(false);
-    setActiveInterventions(new Set());
-    setShowInterventionPanel(false);
     setPatientContext(null);
     try {
       const bmi = calcBMI();
@@ -204,51 +166,7 @@ export default function IndividualPage() {
     finally { setLoading(false); }
   }
 
-  async function handleSimulateInterventions() {
-    if (!timeline || activeInterventions.size === 0) return;
-    setReloading(true);
-    setError(null);
-    try {
-      const bmi = calcBMI();
-      const selected = INTERVENTIONS
-        .filter(intervention => activeInterventions.has(intervention.id))
-        .map(intervention => ({
-          name: intervention.name,
-          description: intervention.description,
-        }));
 
-      const res = await generatePatientTimeline({
-        profile: {
-          name: profile.name,
-          age: parseInt(profile.age),
-          sex: profile.sex,
-          height: profile.heightFt ? `${profile.heightFt}'${profile.heightIn}"` : undefined,
-          weight: profile.weightLbs ? `${profile.weightLbs} lbs` : undefined,
-          bmi: bmi || undefined,
-          ethnicity: profile.ethnicity || undefined,
-          smoker: profile.smoker,
-          familyHistory: profile.familyHistory || undefined,
-        },
-        medicalHistory,
-        interventions: selected,
-      });
-
-      setTimeline(res.timeline);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setReloading(false);
-    }
-  }
-
-  function toggleIntervention(id: string) {
-    setActiveInterventions(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
 
   const bmi = calcBMI();
   const bmiNum = parseFloat(bmi);
@@ -446,7 +364,6 @@ export default function IndividualPage() {
             <div style={{ display: 'flex', gap: 8, marginTop: 4, justifyContent: 'center', flexWrap: 'wrap', fontSize: 11, color: 'var(--text-dim)' }}>
               <span style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '4px 10px' }}>📋 Chronological timeline</span>
               <span style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '4px 10px' }}>📍 County health context</span>
-              <span style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '4px 10px' }}>⚕ Preventability review</span>
             </div>
             <button className="btn-mock-large" onClick={() => { loadMock(); }}>
               ⚡ Load Demo Patient
@@ -471,11 +388,6 @@ export default function IndividualPage() {
                 <p className="timeline-patient-meta">
                   {profile.age}yo · {profile.sex} · {profile.ethnicity || 'Patient'}
                   {profile.location && <> · {profile.location}</>}
-                  {activeInterventions.size > 0 && timeline.some(event => event.avoided) && (
-                    <span className="avoided-badge">
-                      ✓ Risk profile improved with {activeInterventions.size} intervention{activeInterventions.size > 1 ? 's' : ''}
-                    </span>
-                  )}
                 </p>
               </div>
               <div className="timeline-header-actions">
@@ -564,66 +476,6 @@ export default function IndividualPage() {
             <div className="timeline-stage-shell">
               {/* 2D Horizontal Timeline Canvas */}
               <HorizontalTimeline events={timeline} />
-            </div>
-
-            <div className="timeline-prevention-section">
-              <div className="timeline-utility-bar">
-                <div className="timeline-utility-copy">
-                  <span className="intervention-strip-label">Preventability Studio</span>
-                  <div className="timeline-utility-title">Test where earlier action could have changed the trajectory.</div>
-                  <div className="timeline-utility-subtitle">
-                    Re-run the same case with preventive actions to see which downstream events become less likely or avoidable.
-                  </div>
-                </div>
-                <div className="timeline-utility-status">
-                  <span className="timeline-utility-count">{activeInterventions.size} selected</span>
-                  <button
-                    className="btn-simulate-interventions"
-                    onClick={() => setShowInterventionPanel(prev => !prev)}
-                  >
-                    {showInterventionPanel ? 'Hide Preventability Studio' : 'Open Preventability Studio'}
-                  </button>
-                </div>
-              </div>
-
-              {showInterventionPanel && (
-                <div className="timeline-inline-intervention-panel">
-                  <div className="intervention-panel-title">Choose interventions to test a preventability scenario.</div>
-                  <div className="intervention-panel-subtitle">
-                    Each selection is used to regenerate the future portion of the timeline so avoided or reduced-risk events can be marked directly.
-                  </div>
-                  <div className="intervention-chips">
-                    {INTERVENTIONS.map(intervention => (
-                      <button
-                        key={intervention.id}
-                        type="button"
-                        className={`intervention-chip${activeInterventions.has(intervention.id) ? ' active' : ''}`}
-                        onClick={() => toggleIntervention(intervention.id)}
-                        title={intervention.description}
-                      >
-                        <span className="intervention-chip-check">{activeInterventions.has(intervention.id) ? '✓' : '+'}</span>
-                        {intervention.name}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="intervention-panel-footer">
-                    <div className="intervention-panel-note">
-                      {activeInterventions.size > 0
-                        ? 'Selected interventions will be applied to the same case to highlight where earlier action could have changed later outcomes.'
-                        : 'Pick at least one intervention to compare the baseline case against a preventability scenario.'}
-                    </div>
-                    <button
-                      className="btn-reevaluate"
-                      onClick={handleSimulateInterventions}
-                      disabled={reloading || activeInterventions.size === 0}
-                    >
-                      {reloading
-                        ? <><div className="btn-spinner btn-spinner-sm" />Re-evaluating risk profile…</>
-                        : `↺ Apply ${activeInterventions.size} intervention${activeInterventions.size > 1 ? 's' : ''}`}
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </>
         )}
