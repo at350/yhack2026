@@ -1653,7 +1653,8 @@ input[type="number"]:focus {
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .timeline-empty {
@@ -2388,7 +2389,7 @@ input[type="number"]:focus {
 .timeline-stage-shell {
   position: relative;
   flex: 1;
-  min-height: 0;
+  min-height: 540px;
   overflow: hidden;
 }
 

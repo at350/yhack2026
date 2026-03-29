@@ -50,7 +50,7 @@ const NODE_CONFIG = {
 };
 
 const SEVERITY_SIZE: Record<string, number> = {
-  low: 28, medium: 34, high: 40, critical: 46,
+  low: 32, medium: 32, high: 32, critical: 32,
 };
 
 // ── Main Component ─────────────────────────────────────────────────────────
@@ -799,8 +799,8 @@ function HorizontalTimeline({ events }: { events: TimelineEvent[] }) {
           <div className="timeline-ambient timeline-ambient-center" />
           <div className="timeline-ambient timeline-ambient-right" />
 
-          <div className="timeline-baseline" />
-          <div className="timeline-baseline-glow" />
+          <div className="timeline-baseline" style={{ top: layout.lineY }} />
+          <div className="timeline-baseline-glow" style={{ top: layout.lineY - 6 }} />
 
           {events.map((ev, i) => {
             const x = layout.padding + i * layout.gap;
@@ -875,8 +875,8 @@ function HorizontalTimeline({ events }: { events: TimelineEvent[] }) {
                     <div
                       className="node-triangle"
                       style={{
-                        width: size + 18,
-                        height: size + 18,
+                        width: size + 4,
+                        height: size + 4,
                         filter: isActive ? `drop-shadow(0 0 18px ${cfg.glow})` : `drop-shadow(0 0 8px ${cfg.glow})`,
                         opacity: ev.avoided ? 0.4 : 1,
                       }}
