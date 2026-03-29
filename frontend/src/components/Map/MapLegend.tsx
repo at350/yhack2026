@@ -8,10 +8,34 @@ interface Props {
   mapMode: MapMode;
 }
 
+function formatLegendValue(value: number) {
+  if (Math.abs(value) >= 100) return Math.round(value).toLocaleString();
+  if (Math.abs(value) >= 10) return value.toFixed(1);
+  if (Math.abs(value) >= 1) return value.toFixed(1);
+  return value.toFixed(2);
+}
+
 export default function MapLegend({ colorScale, selectedMetric, mapMode }: Props) {
-  const label = mapMode === 'vulnerability' ? 'Social Vulnerability Index'
-    : mapMode === 'equity' ? `Context lens for ${HEALTH_METRIC_LABELS[selectedMetric] ?? selectedMetric}`
-    : HEALTH_METRIC_LABELS[selectedMetric] ?? selectedMetric;
+  const legendMeta = mapMode === 'vulnerability'
+    ? {
+      title: 'Social Vulnerability Index',
+      caption: 'Use this view to find counties with less capacity to absorb shocks or service gaps.',
+      lowLabel: 'Lower vulnerability',
+      highLabel: 'Higher vulnerability',
+    }
+    : mapMode === 'equity'
+      ? {
+        title: 'Poverty Rate',
+        caption: `Use this alongside ${HEALTH_METRIC_LABELS[selectedMetric] ?? selectedMetric} to compare health burden against economic strain.`,
+        lowLabel: 'Lower poverty',
+        highLabel: 'Higher poverty',
+      }
+      : {
+        title: HEALTH_METRIC_LABELS[selectedMetric] ?? selectedMetric,
+        caption: 'Read the selected health metric directly by county.',
+        lowLabel: 'Lower burden',
+        highLabel: 'Higher burden',
+      };
 
   const domain = colorScale.domain();
   const lo = domain[0];
@@ -37,20 +61,32 @@ export default function MapLegend({ colorScale, selectedMetric, mapMode }: Props
         </defs>
       </svg>
 
-      <div>
-        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>{label}</div>
-        <div
-          className="legend-bar"
-          style={{ background: `url(#${gradId})` }}
-        >
-          <svg width="180" height="8" style={{ borderRadius: 4, overflow: 'hidden' }}>
-            <rect width="180" height="8" fill={`url(#${gradId})`} />
+      <div className="map-legend-copy">
+        <div className="map-legend-title">{legendMeta.title}</div>
+        <div className="map-legend-caption">{legendMeta.caption}</div>
+      </div>
+
+      <div className="legend-scale">
+        <div className="legend-bar" style={{ background: `url(#${gradId})` }}>
+          <svg width="100%" height="10" viewBox="0 0 240 10" preserveAspectRatio="none">
+            <rect width="240" height="10" fill={`url(#${gradId})`} />
           </svg>
         </div>
         <div className="legend-labels">
-          <span>{lo.toFixed(1)}</span>
-          {domain.length === 3 && <span>{Number(domain[1]).toFixed(1)}</span>}
-          <span>{hi.toFixed(1)}</span>
+          <span className="legend-label-group">
+            <small>{legendMeta.lowLabel}</small>
+            <strong>{formatLegendValue(lo)}</strong>
+          </span>
+          {domain.length === 3 && (
+            <span className="legend-label-group legend-label-group-center">
+              <small>Midpoint</small>
+              <strong>{formatLegendValue(Number(domain[1]))}</strong>
+            </span>
+          )}
+          <span className="legend-label-group legend-label-group-end">
+            <small>{legendMeta.highLabel}</small>
+            <strong>{formatLegendValue(hi)}</strong>
+          </span>
         </div>
       </div>
     </div>

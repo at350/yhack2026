@@ -13,10 +13,34 @@ const METRIC_OPTIONS: HealthMetric[] = [
   'mortalityRate',
 ];
 
-const MAP_MODE_OPTIONS: Array<{ id: MapMode; label: string; description: string }> = [
-  { id: 'baseline', label: 'Health burden', description: 'Read the selected health metric directly by county.' },
-  { id: 'equity', label: 'Socioeconomic strain', description: 'View the selected county alongside poverty burden.' },
-  { id: 'vulnerability', label: 'SVI lens', description: 'Shift attention to community vulnerability and resilience.' },
+const MAP_MODE_OPTIONS: Array<{
+  id: MapMode;
+  label: string;
+  description: string;
+  useCase: (metricLabel: string) => string;
+  interpretation: string;
+}> = [
+  {
+    id: 'baseline',
+    label: 'Health burden',
+    description: 'Map the raw county rate for the selected health outcome.',
+    useCase: metricLabel => `You want the direct county rate for ${metricLabel.toLowerCase()}.`,
+    interpretation: 'Darker counties mean a heavier burden for the selected metric.',
+  },
+  {
+    id: 'equity',
+    label: 'Economic strain',
+    description: 'Map county poverty rates to understand structural barriers around the issue.',
+    useCase: metricLabel => `You want to see where poverty may be intensifying ${metricLabel.toLowerCase()}.`,
+    interpretation: 'Darker counties mean a larger share of residents living in poverty.',
+  },
+  {
+    id: 'vulnerability',
+    label: 'Community vulnerability',
+    description: 'Map overall SVI to find places with the least buffer against disruption.',
+    useCase: () => 'You are deciding where broader community conditions could make response or outreach harder.',
+    interpretation: 'Darker counties have higher Social Vulnerability Index scores.',
+  },
 ];
 
 function average(values: number[]) {
@@ -93,6 +117,8 @@ export default function MapPage() {
   }, [matchedCounty, setSelectedCounty]);
 
   const activeCounty = selectedCounty ?? matchedCounty ?? null;
+  const activeMode = MAP_MODE_OPTIONS.find(mode => mode.id === mapMode) ?? MAP_MODE_OPTIONS[0];
+  const selectedMetricLabel = HEALTH_METRIC_LABELS[selectedMetric] ?? selectedMetric;
 
   const metricValues = useMemo(
     () => counties
@@ -196,12 +222,22 @@ export default function MapPage() {
                 </button>
               ))}
             </div>
+            <div className="population-lens-guide">
+              <div className="population-lens-guide-label">Use this lens when</div>
+              <div className="population-lens-guide-copy">
+                {activeMode.useCase(selectedMetricLabel)}
+              </div>
+              <div className="population-lens-guide-rule">
+                <span>Read colors as</span>
+                <strong>{activeMode.interpretation}</strong>
+              </div>
+            </div>
           </div>
 
           <div className="population-panel-card">
             <div className="section-label">How to Use This</div>
             <div className="population-explainer-copy">
-              Start from the patient’s matched county to see the population forces behind their case. Compare it against state and national baselines to explain disparities, identify follow-up priorities, and surface the community-level signals that individual records alone can’t show.
+              Pick a metric, scan for hotspots, click into a county, then switch lenses to test whether the pattern is mostly about disease burden, economic pressure, or broader community vulnerability.
             </div>
           </div>
         </div>

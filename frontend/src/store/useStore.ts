@@ -68,7 +68,7 @@ export const useStore = create<AppState>((set, get) => ({
   setCounties: (counties) => set({ counties }),
   setInterventions: (interventions) => set({ interventions }),
 
-  selectedMetric: 'obesity',
+  selectedMetric: 'diabetes',
   setSelectedMetric: (selectedMetric) => set({ selectedMetric }),
   mapMode: 'baseline',
   setMapMode: (mapMode) => set({ mapMode }),

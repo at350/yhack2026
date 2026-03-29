@@ -125,7 +125,7 @@ const TABS: { id: TabId; label: string; icon: string; navIcon: string }[] = [
 ];
 
 export default function App() {
-  const { activeTab, setActiveTab, setCounties } = useStore();
+  const { activeTab, setActiveTab, setCounties, setInterventions } = useStore();
 
   // Load static data on mount
   useEffect(() => {
@@ -143,6 +143,13 @@ export default function App() {
       ))
       .catch(console.error);
   }, [setCounties]);
+
+  useEffect(() => {
+    fetch('/data/interventions.json')
+      .then(r => r.json())
+      .then(setInterventions)
+      .catch(console.error);
+  }, [setInterventions]);
 
   return (
     <>

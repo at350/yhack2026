@@ -12,18 +12,32 @@ const METRICS = ['obesity', 'smoking', 'diabetes', 'physicalInactivity', 'mental
 export default function CountyModal({ county, onClose }: Props) {
   const { patientContext, selectedMetric } = useStore();
   const isMatchedCounty = patientContext?.matchedCountyFips === county.fips;
+  const selectedMetricLabel = HEALTH_METRIC_LABELS[selectedMetric] ?? selectedMetric;
+  const summaryCopy = isMatchedCounty
+    ? 'This county is the patient anchor. Use it as the baseline for local burden and community conditions when comparing other counties.'
+    : `Use this county to compare ${selectedMetricLabel.toLowerCase()} and community conditions against the patient anchor or a nearby peer.`;
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal fade-in">
         <div className="modal-header">
-          <div>
+          <div className="modal-header-copy">
             <h2 style={{ fontSize: 20, marginBottom: 4 }}>{county.name}</h2>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
               {county.stateName} · Pop. {county.population.toLocaleString()}
             </div>
+            <div className="modal-header-tags">
+              <span className={`modal-context-chip${isMatchedCounty ? ' active' : ''}`}>
+                {isMatchedCounty ? 'Patient anchor county' : 'Comparison county'}
+              </span>
+              <span className="modal-context-chip">{selectedMetricLabel} in focus</span>
+            </div>
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="modal-context-summary">
+          {summaryCopy}
         </div>
 
         {/* Health Indicators */}
@@ -80,24 +94,6 @@ export default function CountyModal({ county, onClose }: Props) {
             <div className="metric-tile-value">{county.environment.aqiO3.toFixed(1)}</div>
             <div className="metric-tile-label">Avg Unhealthy Days</div>
           </div>
-        </div>
-
-        <div className="section-label" style={{ marginBottom: 12 }}>Interpretation Notes</div>
-        <div className="card" style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-secondary)' }}>
-            {isMatchedCounty
-              ? 'This county is currently acting as the patient anchor. Use it to explain how the individual case fits within local disease burden and community conditions.'
-              : 'Use this county as a comparison point to see how the selected metric and community conditions differ from the patient anchor or national baseline.'}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12 }}>
-            <span style={{ color: 'var(--text-dim)' }}>Current map metric</span>
-            <strong>{HEALTH_METRIC_LABELS[selectedMetric]}</strong>
-          </div>
-          {isMatchedCounty && (
-            <div style={{ fontSize: 11, color: 'var(--accent-primary)' }}>
-              Patient anchor county
-            </div>
-          )}
         </div>
 
         <div style={{ display: 'flex', gap: 8 }}>
