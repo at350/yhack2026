@@ -22,7 +22,10 @@
     }
   ],
   "env": {
-    "OPENAI_API_KEY": "@openai-api-key",
-    "OPENAI_MODEL": "gpt-4.5-preview"
+    "LAVA_FORWARD_TOKEN": "@lava-forward-token",
+    "LAVA_MODEL": "openai/gpt-4o-mini",
+    "LAVA_MODEL_FAST": "openai/gpt-4o-mini",
+    "LAVA_MODEL_SUMMARY": "openai/gpt-4o-mini",
+    "LAVA_MODEL_DEEP": "openai/gpt-4o-mini"
   }
 }

@@ -254,7 +254,10 @@ const TABS: { id: TabId; label: string; icon: string; navIcon: string }[] = [
 ];
 
 export default function App() {
-  const { activeTab, setActiveTab, setCounties } = useStore();
+  const { activeTab, setActiveTab, setCounties, counties } = useStore();
+  const countyCountLabel = counties.length > 0
+    ? `${counties.length.toLocaleString()} county profiles`
+    : 'Loading county profiles…';
 
   // Load static data on mount
   useEffect(() => {
@@ -297,7 +300,7 @@ export default function App() {
         <div className="header-right">
           <div className="status-badge">
             <div className="status-dot" />
-            <span>3,142 counties</span>
+            <span>{countyCountLabel}</span>
           </div>
         </div>
       </header>

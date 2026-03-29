@@ -427,7 +427,7 @@ export default function IndividualPage() {
 
         <div className="patient-form-bottom">
           <button className="btn-generate" onClick={handleGenerate} disabled={loading}>
-            {loading ? <><div className="btn-spinner" />Analyzing with Lava…</> : <>✦ Generate Health Timeline</>}
+            {loading ? <><div className="btn-spinner" />Structuring patient context…</> : <>✦ Generate Health Timeline</>}
           </button>
         </div>
       </div>
@@ -439,14 +439,14 @@ export default function IndividualPage() {
             <div className="timeline-empty-icon">🩺</div>
             <div className="timeline-empty-title">Enter a patient to build their health context</div>
             <div className="timeline-empty-sub">
-              Prophis reads a patient's medical history and maps it into a chronological health
-              narrative — then grounds it in real county and national data to surface how the patient's
-              trajectory relates to the population patterns around them.
+              Prophis turns fragmented medical history into a readable timeline, then layers in county
+              and cohort context so analysts can interpret the case and spot moments where earlier action
+              may have changed the trajectory.
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 4, justifyContent: 'center', flexWrap: 'wrap', fontSize: 11, color: 'var(--text-dim)' }}>
               <span style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '4px 10px' }}>📋 Chronological timeline</span>
               <span style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '4px 10px' }}>📍 County health context</span>
-              <span style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '4px 10px' }}>⚕ Intervention explorer</span>
+              <span style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '4px 10px' }}>⚕ Preventability review</span>
             </div>
             <button className="btn-mock-large" onClick={() => { loadMock(); }}>
               ⚡ Load Demo Patient
@@ -458,7 +458,7 @@ export default function IndividualPage() {
           <div className="timeline-loading">
             <div className="loading-orb" />
             <div className="loading-title">Building patient health context…</div>
-            <div className="loading-sub">Lava is reading the records and mapping the health narrative against county and national data</div>
+            <div className="loading-sub">Structuring the record into a timeline and layering in county and cohort context</div>
           </div>
         )}
 
@@ -569,10 +569,10 @@ export default function IndividualPage() {
             <div className="timeline-prevention-section">
               <div className="timeline-utility-bar">
                 <div className="timeline-utility-copy">
-                  <span className="intervention-strip-label">Prevention Studio</span>
-                  <div className="timeline-utility-title">Model alternate futures before the next event lands.</div>
+                  <span className="intervention-strip-label">Preventability Studio</span>
+                  <div className="timeline-utility-title">Test where earlier action could have changed the trajectory.</div>
                   <div className="timeline-utility-subtitle">
-                    Select prevention options and re-run the patient timeline against the same medical record and county context.
+                    Re-run the same case with preventive actions to see which downstream events become less likely or avoidable.
                   </div>
                 </div>
                 <div className="timeline-utility-status">
@@ -581,16 +581,16 @@ export default function IndividualPage() {
                     className="btn-simulate-interventions"
                     onClick={() => setShowInterventionPanel(prev => !prev)}
                   >
-                    {showInterventionPanel ? 'Hide Prevention Studio' : 'Open Prevention Studio'}
+                    {showInterventionPanel ? 'Hide Preventability Studio' : 'Open Preventability Studio'}
                   </button>
                 </div>
               </div>
 
               {showInterventionPanel && (
                 <div className="timeline-inline-intervention-panel">
-                  <div className="intervention-panel-title">Choose interventions to rewrite the projected path.</div>
+                  <div className="intervention-panel-title">Choose interventions to test a preventability scenario.</div>
                   <div className="intervention-panel-subtitle">
-                    Each selection is passed back into the timeline generator so avoided outcomes can be marked directly on the future track.
+                    Each selection is used to regenerate the future portion of the timeline so avoided or reduced-risk events can be marked directly.
                   </div>
                   <div className="intervention-chips">
                     {INTERVENTIONS.map(intervention => (
@@ -609,8 +609,8 @@ export default function IndividualPage() {
                   <div className="intervention-panel-footer">
                     <div className="intervention-panel-note">
                       {activeInterventions.size > 0
-                        ? 'Selected interventions will mark prevented outcomes directly on the projected health path.'
-                        : 'Pick at least one intervention to compare the baseline timeline against an alternate future.'}
+                        ? 'Selected interventions will be applied to the same case to highlight where earlier action could have changed later outcomes.'
+                        : 'Pick at least one intervention to compare the baseline case against a preventability scenario.'}
                     </div>
                     <button
                       className="btn-reevaluate"
@@ -976,7 +976,7 @@ function HorizontalTimeline({ events }: { events: TimelineEvent[] }) {
           <span className={`timeline-card-severity timeline-card-severity-${focusedEvent?.severity}`}>{focusedEvent?.severity}</span>
         </div>
         {focusedIsFuture && !focusedEvent?.avoided && (
-          <div className="timeline-focus-note">Lava projection — not a clinical prediction.</div>
+          <div className="timeline-focus-note">Modeled future context only — not a clinical prediction.</div>
         )}
       </div>
 

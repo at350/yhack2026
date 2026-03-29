@@ -4174,21 +4174,30 @@ input[type="number"]:focus {
 }
 
 .population-mode-pill-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
 .population-mode-pill {
+  flex: 1 1 156px;
+  appearance: none;
+  -webkit-appearance: none;
   min-height: 42px;
   padding: 10px 12px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(7, 13, 26, 0.72);
   color: var(--text-secondary);
+  font-family: inherit;
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
   cursor: pointer;
+  outline: none;
   transition: all 0.16s ease;
 }
 
@@ -4202,6 +4211,20 @@ input[type="number"]:focus {
   background: rgba(0, 212, 170, 0.14);
   color: var(--text-primary);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.population-mode-pill:focus-visible {
+  border-color: rgba(61, 142, 255, 0.52);
+  box-shadow:
+    0 0 0 2px rgba(6, 11, 24, 0.95),
+    0 0 0 4px rgba(61, 142, 255, 0.32);
+}
+
+.population-mode-pill.active:focus-visible {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 2px rgba(6, 11, 24, 0.95),
+    0 0 0 4px rgba(61, 142, 255, 0.32);
 }
 
 .population-lens-guide {
@@ -4387,8 +4410,12 @@ input[type="number"]:focus {
   .population-metric-grid,
   .population-selector-grid,
   .modal-glance-grid,
-  .population-mode-pill-row,
   .modal-spotlight-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .population-mode-pill-row {
+    display: grid;
     grid-template-columns: 1fr;
   }
 
