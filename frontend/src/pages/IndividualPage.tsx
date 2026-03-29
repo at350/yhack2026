@@ -489,7 +489,7 @@ export default function IndividualPage() {
                   </div>
                   <div className="timeline-utility-status">
                     <span className="timeline-utility-count">
-                      {opportunities.length} opportunity{opportunities.length === 1 ? '' : 'ies'}
+                      {opportunities.length} {opportunities.length === 1 ? 'opportunity' : 'opportunities'}
                     </span>
                   </div>
                 </div>
