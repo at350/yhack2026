@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useStore } from '../store/useStore';
 import { generatePatientTimeline, getSimilarityScore } from '../api/client';
 import type { TimelineEvent, SimilarityResult } from '../api/client';
+import { runSimilarityEngine } from '../utils/similarityEngine';
+import type { MetricInsight } from '../types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface PatientProfile {
@@ -65,6 +67,8 @@ export default function IndividualPage() {
   const [activeInterventions, setActiveInterventions] = useState<Set<string>>(new Set());
   const [showInterventionPanel, setShowInterventionPanel] = useState(false);
   const [reloading, setReloading] = useState(false);
+  const [insights, setInsights] = useState<MetricInsight[] | null>(null);
+  const [showInsights, setShowInsights] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const counties = useStore(s => s.counties);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
@@ -92,6 +96,7 @@ export default function IndividualPage() {
   async function handleGenerate() {
     if (!profile.age || !profile.name) { setError('Please enter a patient name and age.'); return; }
     setLoading(true); setError(null); setTimeline(null); setSimilarity(null);
+    setInsights(null); setShowInsights(false);
     setActiveInterventions(new Set()); setShowInterventionPanel(false);
     try {
       const bmi = calcBMI();
@@ -118,6 +123,20 @@ export default function IndividualPage() {
       ]);
       setTimeline(timelineRes.timeline);
       setSimilarity(simRes);
+      // Community health context engine (client-side, synchronous)
+      const bmiNum = bmi ? parseFloat(bmi) : null;
+      if (matchedCounty) {
+        setInsights(runSimilarityEngine({
+          matchedCounty,
+          allCounties: counties,
+          bmi: bmiNum,
+          smoker: profile.smoker,
+          familyHistory: profile.familyHistory,
+        }));
+        setShowInsights(true);
+      } else {
+        setInsights(null);
+      }
     } catch (err) { setError(String(err)); }
     finally { setLoading(false); }
   }
@@ -388,6 +407,34 @@ export default function IndividualPage() {
               </div>
             )}
 
+            {/* ── Community Health Context (Layers 2–4 insight engine) ── */}
+            {insights && (
+              <div style={{ borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
+                <button
+                  type="button"
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center',
+                    justifyContent: 'space-between', padding: '10px 24px',
+                    background: 'rgba(61,142,255,0.04)', border: 'none',
+                    cursor: 'pointer', fontFamily: '"Outfit", sans-serif',
+                  }}
+                  onClick={() => setShowInsights(v => !v)}
+                >
+                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-dim)' }}>
+                    Community Health Context
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--accent-blue)' }}>
+                    {showInsights ? '▲ Hide' : '▼ Show'} {insights.length} metrics
+                  </span>
+                </button>
+                {showInsights && (
+                  <div style={{ padding: '0 24px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {insights.map(ins => <InsightTile key={ins.metric} insight={ins} />)}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="timeline-stage-shell">
               {showInterventionPanel && (
                 <>
@@ -453,6 +500,81 @@ function getEventDescriptor(event: TimelineEvent) {
   if (event.type === 'warning') return 'Escalation warning';
   if (event.type === 'predicted' || event.type === 'risk') return 'Projected future event';
   return 'Recorded history';
+}
+
+// ── InsightTile ──────────────────────────────────────────────────────────────
+const ALIGNMENT_CONFIG = {
+  higher:  { color: '#FF9B3D', label: 'Higher than county avg', dot: '▲' },
+  lower:   { color: 'var(--accent-primary)', label: 'Lower than county avg', dot: '▼' },
+  similar: { color: 'var(--text-secondary)', label: 'Similar to county avg', dot: '●' },
+} as const;
+
+function InsightTile({ insight: ins }: { insight: MetricInsight }) {
+  const alignCfg = ALIGNMENT_CONFIG[ins.personalAlignment.alignment];
+  const barPct   = Math.min(100, Math.max(0, ins.nationalPercentile));
+  const barColor =
+    barPct >= 75 ? '#FF6B6B'
+    : barPct >= 50 ? '#FF9B3D'
+    : barPct >= 25 ? '#FFB84D'
+    : 'var(--accent-primary)';
+
+  return (
+    <div className="card-glass" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Label + personal alignment badge */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+          {ins.label}
+        </span>
+        <span style={{
+          fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
+          color: alignCfg.color,
+          background: `${alignCfg.color}22`,
+          border: `1px solid ${alignCfg.color}55`,
+          borderRadius: 99, padding: '2px 9px',
+        }}>
+          {alignCfg.dot} {alignCfg.label}
+        </span>
+      </div>
+
+      {/* County value + national percentile bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', fontFamily: '"Outfit", sans-serif', letterSpacing: '-0.03em', flexShrink: 0 }}>
+          {ins.userCountyValue.toFixed(1)}
+          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-dim)', marginLeft: 2 }}>{ins.unit}</span>
+        </span>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-dim)' }}>
+            <span>National percentile</span>
+            <span style={{ color: barColor, fontWeight: 700 }}>{ins.nationalPercentile}th</span>
+          </div>
+          <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', borderRadius: 2, background: barColor,
+              width: `${barPct}%`,
+              transition: 'width 0.8s cubic-bezier(0.16, 1, 0.3, 1)',
+            }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Peer stats row */}
+      <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+        <span>Peer avg: <strong style={{ color: 'var(--text-primary)' }}>{ins.peerCountyAvg.toFixed(1)}{ins.unit}</strong></span>
+        <span>Peer range: <strong style={{ color: 'var(--text-primary)' }}>{ins.peerCountyRange[0].toFixed(1)}–{ins.peerCountyRange[1].toFixed(1)}{ins.unit}</strong></span>
+        <span>National avg: <strong style={{ color: 'var(--text-primary)' }}>{ins.nationalAvg.toFixed(1)}{ins.unit}</strong></span>
+      </div>
+
+      {/* Personal alignment detail */}
+      <div style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.55, borderTop: '1px solid var(--border-subtle)', paddingTop: 7 }}>
+        {ins.personalAlignment.detail}
+      </div>
+
+      {/* Community-framed interpretation — no "risk" language */}
+      <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.6, fontStyle: 'italic' }}>
+        {ins.interpretation}
+      </div>
+    </div>
+  );
 }
 
 function HorizontalTimeline({ events }: { events: TimelineEvent[] }) {

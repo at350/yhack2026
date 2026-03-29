@@ -38,6 +38,22 @@ export interface CountyRecord {
   };
 }
 
+export interface MetricInsight {
+  metric:             string;
+  label:              string;
+  unit:               string;
+  userCountyValue:    number;
+  nationalPercentile: number;       // 0–100; higher = worse for negative-health metrics
+  peerCountyAvg:      number;
+  peerCountyRange:    [number, number];
+  nationalAvg:        number;
+  personalAlignment: {
+    alignment: 'higher' | 'lower' | 'similar';
+    detail:    string;
+  };
+  interpretation: string;
+}
+
 export interface Intervention {
   id: string;
   name: string;
