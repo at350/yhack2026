@@ -63,9 +63,29 @@ const STATE_ABBREV: Record<string, string> = {
   'Wisconsin': 'WI', 'Wyoming': 'WY', 'District of Columbia': 'DC',
 };
 
+// Connecticut's source file contains two incompatible geographies:
+// legacy counties (09001–09015), which match the map geometry but miss several fields,
+// and newer planning regions (09110–09190), which have the full metric set.
+// Keep the legacy county FIPS so the county borders remain unchanged on the map,
+// and backfill missing values from the closest planning-region geography.
+const CT_LEGACY_COUNTY_TO_PLANNING_REGIONS: Record<string, string[]> = {
+  '09001': ['09120', '09190'], // Fairfield
+  '09003': ['09110'],          // Hartford
+  '09005': ['09160'],          // Litchfield
+  '09007': ['09130'],          // Middlesex
+  '09009': ['09140', '09170'], // New Haven
+  '09011': ['09180'],          // New London
+  '09013': ['09110'],          // Tolland
+  '09015': ['09150'],          // Windham
+};
+
 function safeNum(val: unknown): number {
   if (typeof val === 'number' && !isNaN(val)) return val;
   return 0;
+}
+
+function preferMetric(primary: number, fallback: number): number {
+  return primary > 0 ? primary : fallback;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -124,6 +144,109 @@ function transformCounty(raw: any): CountyRecord {
   };
 }
 
+function aggregateCountyRecords(records: CountyRecord[]): CountyRecord {
+  if (records.length === 0) {
+    throw new Error('Cannot aggregate zero county records');
+  }
+
+  const totalPopulation = records.reduce((sum, record) => sum + record.population, 0);
+  const weighted = (selector: (record: CountyRecord) => number): number => {
+    if (totalPopulation <= 0) {
+      return selector(records[0]);
+    }
+    return records.reduce(
+      (sum, record) => sum + selector(record) * record.population,
+      0
+    ) / totalPopulation;
+  };
+
+  return {
+    ...records[0],
+    population: totalPopulation,
+    isUrban: weighted(record => record.isUrban ? 0 : 1) < 0.5,
+    demographics: {
+      pctPoverty: weighted(record => record.demographics.pctPoverty),
+      pctUninsured: weighted(record => record.demographics.pctUninsured),
+      pctElderly: weighted(record => record.demographics.pctElderly),
+      pctBlack: weighted(record => record.demographics.pctBlack),
+      pctHispanic: weighted(record => record.demographics.pctHispanic),
+      pctWhite: weighted(record => record.demographics.pctWhite),
+    },
+    health: {
+      obesity: weighted(record => record.health.obesity),
+      smoking: weighted(record => record.health.smoking),
+      diabetes: weighted(record => record.health.diabetes),
+      physicalInactivity: weighted(record => record.health.physicalInactivity),
+      mentalHealth: weighted(record => record.health.mentalHealth),
+      heartDisease: weighted(record => record.health.heartDisease),
+      copd: weighted(record => record.health.copd),
+      checkups: weighted(record => record.health.checkups),
+      mortalityRate: weighted(record => record.health.mortalityRate),
+    },
+    environment: {
+      aqiPM25: weighted(record => record.environment.aqiPM25),
+      aqiO3: weighted(record => record.environment.aqiO3),
+    },
+    svi: {
+      overall: weighted(record => record.svi.overall),
+      socioeconomic: weighted(record => record.svi.socioeconomic),
+      householdComp: weighted(record => record.svi.householdComp),
+      minority: weighted(record => record.svi.minority),
+      housingTransport: weighted(record => record.svi.housingTransport),
+    },
+  };
+}
+
+function normalizeConnecticutCounties(raw: any[]): CountyRecord[] {
+  const transformedByFips = new Map(raw.map(record => {
+    const transformed = transformCounty(record);
+    return [transformed.fips, transformed] as const;
+  }));
+
+  return Object.entries(CT_LEGACY_COUNTY_TO_PLANNING_REGIONS).map(([legacyFips, regionFips]) => {
+    const legacy = transformedByFips.get(legacyFips);
+    if (!legacy) {
+      throw new Error(`Missing Connecticut legacy county record for ${legacyFips}`);
+    }
+
+    const planningRegions = regionFips
+      .map(fips => transformedByFips.get(fips))
+      .filter((record): record is CountyRecord => Boolean(record));
+
+    const fallback = planningRegions.length > 0 ? aggregateCountyRecords(planningRegions) : legacy;
+
+    return {
+      ...legacy,
+      population: preferMetric(legacy.population, fallback.population),
+      isUrban: legacy.population > 0 ? legacy.isUrban : fallback.isUrban,
+      demographics: {
+        pctPoverty: preferMetric(legacy.demographics.pctPoverty, fallback.demographics.pctPoverty),
+        pctUninsured: preferMetric(legacy.demographics.pctUninsured, fallback.demographics.pctUninsured),
+        pctElderly: preferMetric(legacy.demographics.pctElderly, fallback.demographics.pctElderly),
+        pctBlack: preferMetric(legacy.demographics.pctBlack, fallback.demographics.pctBlack),
+        pctHispanic: preferMetric(legacy.demographics.pctHispanic, fallback.demographics.pctHispanic),
+        pctWhite: preferMetric(legacy.demographics.pctWhite, fallback.demographics.pctWhite),
+      },
+      health: {
+        obesity: preferMetric(legacy.health.obesity, fallback.health.obesity),
+        smoking: preferMetric(legacy.health.smoking, fallback.health.smoking),
+        diabetes: preferMetric(legacy.health.diabetes, fallback.health.diabetes),
+        physicalInactivity: preferMetric(legacy.health.physicalInactivity, fallback.health.physicalInactivity),
+        mentalHealth: preferMetric(legacy.health.mentalHealth, fallback.health.mentalHealth),
+        heartDisease: preferMetric(legacy.health.heartDisease, fallback.health.heartDisease),
+        copd: preferMetric(legacy.health.copd, fallback.health.copd),
+        checkups: preferMetric(legacy.health.checkups, fallback.health.checkups),
+        mortalityRate: preferMetric(legacy.health.mortalityRate, fallback.health.mortalityRate),
+      },
+      environment: {
+        aqiPM25: preferMetric(legacy.environment.aqiPM25, fallback.environment.aqiPM25),
+        aqiO3: preferMetric(legacy.environment.aqiO3, fallback.environment.aqiO3),
+      },
+      svi: fallback.svi,
+    };
+  });
+}
+
 export interface Intervention {
   id: string;
   name: string;
@@ -158,12 +281,13 @@ export function getCountyData(): CountyRecord[] {
   if (!_countyData) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw: any[] = JSON.parse(readFileSync(resolveDataPath('county_health_data_full.json'), 'utf-8'));
-    // Drop Connecticut's legacy county stubs (09001–09015): they lack demographics/behavioral
-    // metrics because CT replaced county governance with planning regions in 2022. The planning
-    // region records (09110–09190) carry the complete data and are kept.
-    _countyData = raw
-      .filter((r: any) => !(r.state === 'Connecticut' && parseInt(r.fips) < 9100))
+    const nonConnecticutCounties = raw
+      .filter((record: any) => record.state !== 'Connecticut')
       .map(transformCounty);
+    const connecticutCounties = normalizeConnecticutCounties(
+      raw.filter((record: any) => record.state === 'Connecticut')
+    );
+    _countyData = [...nonConnecticutCounties, ...connecticutCounties];
   }
   return _countyData!;
 }

@@ -4,9 +4,6 @@ import { generatePatientTimeline, getSimilarityScore } from '../api/client';
 import type { TimelineEvent } from '../api/client';
 import { runDemographicEngine } from '../utils/demographicEngine';
 import type { DemographicInsight, SimilarityResult } from '../types';
-import InterventionPanel from '../components/Interventions/InterventionPanel';
-import SimulationControls from '../components/Simulation/SimulationControls';
-import ResultsPanel from '../components/Simulation/ResultsPanel';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface PatientProfile {
@@ -69,15 +66,10 @@ export default function IndividualPage() {
   const [error, setError] = useState<string | null>(null);
   const [insight, setInsight] = useState<DemographicInsight | null>(null);
   const [showInsights, setShowInsights] = useState(false);
-  const [showInterventionExplorer, setShowInterventionExplorer] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const interventionExplorerRef = useRef<HTMLDivElement>(null);
   const counties = useStore(s => s.counties);
   const setPatientContext = useStore(s => s.setPatientContext);
   const setActiveTab = useStore(s => s.setActiveTab);
-  const interventions = useStore(s => s.interventions);
-  const activeInterventions = useStore(s => s.activeInterventions);
-  const simulationResult = useStore(s => s.simulationResult);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
 
   const [showEthAutocomplete, setShowEthAutocomplete] = useState(false);
@@ -112,17 +104,6 @@ export default function IndividualPage() {
     setProfile(MOCK_PATIENT);
     setMedicalHistory(MOCK_HISTORY);
   }
-
-  useEffect(() => {
-    if (timeline) setShowInterventionExplorer(true);
-  }, [timeline]);
-
-  const revealInterventionExplorer = useCallback(() => {
-    setShowInterventionExplorer(true);
-    window.requestAnimationFrame(() => {
-      interventionExplorerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }, []);
 
   async function handleGenerate() {
     if (!profile.age || !profile.name) { setError('Please enter a patient name and age.'); return; }
@@ -408,20 +389,12 @@ export default function IndividualPage() {
                   {profile.location && <> · {profile.location}</>}
                 </p>
               </div>
-              <div className="timeline-header-actions">
-                <button
-                  className="btn-simulate-interventions btn-intervention-explorer"
-                  onClick={revealInterventionExplorer}
-                >
-                  ⚕ Intervention Explorer
-                </button>
-                <button
-                  className="btn-simulate-interventions"
-                  onClick={() => setActiveTab('map')}
-                >
-                  ↗ View Population Context
-                </button>
-              </div>
+              <button
+                className="btn-simulate-interventions"
+                onClick={() => setActiveTab('map')}
+              >
+                ↗ View Population Context
+              </button>
             </div>
 
             {/* Diabetes context signal */}
@@ -496,44 +469,6 @@ export default function IndividualPage() {
                 )}
               </div>
             )}
-
-            <div ref={interventionExplorerRef} className="intervention-explorer-shell">
-              <button
-                type="button"
-                className="intervention-explorer-toggle"
-                onClick={() => setShowInterventionExplorer(v => !v)}
-              >
-                <div>
-                  <div className="intervention-explorer-kicker">Intervention Explorer</div>
-                  <div className="intervention-explorer-title">
-                    Try interventions, project what changes, and use that to guide policy on the map
-                  </div>
-                </div>
-                <div className="intervention-explorer-summary">
-                  <span>{interventions.length} interventions loaded</span>
-                  <span>{activeInterventions.length} selected</span>
-                  <span>{simulationResult ? 'Simulation ready' : 'No simulation yet'}</span>
-                  <strong>{showInterventionExplorer ? 'Hide' : 'Show'}</strong>
-                </div>
-              </button>
-
-              {showInterventionExplorer && (
-                <div className="intervention-explorer-grid">
-                  <div className="intervention-explorer-builder">
-                    <InterventionPanel />
-                  </div>
-
-                  <div className="intervention-explorer-sidecar">
-                    <div className="intervention-explorer-controls">
-                      <SimulationControls />
-                    </div>
-                    <div className="intervention-explorer-results">
-                      <ResultsPanel />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
 
             <div className="timeline-stage-shell">
               {/* 2D Horizontal Timeline Canvas */}
