@@ -33,11 +33,9 @@ function safeN(val: unknown): number | null {
   return null;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function transformCounty(raw: any): CountyRecord {
+function transformCounty(raw: Record<string, unknown>): CountyRecord {
   const g = (category: string, field: string): number =>
     safeNum((raw[category] as Record<string, unknown>)?.[field]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const gn = (category: string, field: string): number | null =>
     safeN((raw[category] as Record<string, unknown>)?.[field]);
 
@@ -153,9 +151,9 @@ export default function App() {
       <header className="app-header">
         <div className="header-left">
           <a className="logo" href="#" style={{ letterSpacing: '-0.02em', fontSize: 20 }}>
-            <div className="logo-icon" style={{ boxShadow: '0 0 24px rgba(0,212,170,0.4)', fontSize: 18 }}>✨</div>
+            <img className="logo-icon" src="/prophis-logo.png" alt="Prophis Home" />
             <span style={{ fontWeight: 800 }}>
-              PR<span className="text-gradient">OPHIS</span>
+              PR<span style={{ color: 'var(--text-primary)' }}>OPHIS</span>
             </span>
           </a>
           <div className="header-divider" />
