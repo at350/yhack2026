@@ -2900,6 +2900,7 @@ input[type="number"]:focus {
   outline: none;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x;
+  overscroll-behavior: contain;
 }
 
 .timeline-viewport::-webkit-scrollbar {
@@ -3660,9 +3661,9 @@ input[type="number"]:focus {
 /* ── Patient Context + Population Trends Refresh ───────────────────────── */
 .diabetes-context-card {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
   gap: 22px 28px;
-  padding: 22px 30px;
+  padding: 20px 30px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   background:
     linear-gradient(120deg, rgba(255, 155, 61, 0.08), rgba(8, 15, 28, 0.55) 46%, rgba(0, 212, 170, 0.06)),
@@ -3709,12 +3710,11 @@ input[type="number"]:focus {
 }
 
 .diabetes-context-title {
-  font-size: 26px;
+  font-size: 22px;
   letter-spacing: -0.04em;
 }
 
 .diabetes-context-subhead,
-.diabetes-context-note,
 .diabetes-factor-explainer,
 .population-explainer-copy,
 .population-empty-copy {
@@ -3756,10 +3756,9 @@ input[type="number"]:focus {
 }
 
 .diabetes-context-breakdown {
-  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 
 .diabetes-context-breakdown-head {
@@ -3775,7 +3774,7 @@ input[type="number"]:focus {
 }
 
 .diabetes-context-caveat {
-  max-width: 520px;
+  max-width: 360px;
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0;
@@ -3789,7 +3788,7 @@ input[type="number"]:focus {
 
 .diabetes-factor-copy {
   width: 100%;
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(9, 15, 29, 0.54);
@@ -3817,7 +3816,7 @@ input[type="number"]:focus {
 .diabetes-factor-bar {
   width: 100%;
   height: 7px;
-  margin: 10px 0 8px;
+  margin: 8px 0 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
   overflow: hidden;
@@ -3833,7 +3832,7 @@ input[type="number"]:focus {
 .diabetes-context-stats,
 .population-metric-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 

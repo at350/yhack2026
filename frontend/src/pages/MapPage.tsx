@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import AIPanel from '../components/AI/AIPanel';
 import { useStore } from '../store/useStore';
 import type { CountyRecord, HealthMetric, MapMode } from '../types';
@@ -70,6 +70,7 @@ export default function MapPage() {
     setSelectedCounty,
     patientContext,
   } = useStore();
+  const autoOpenedAnchorFipsRef = useRef<string | null>(null);
 
   const matchedCounty = useMemo(
     () => patientContext?.matchedCountyFips
@@ -85,10 +86,11 @@ export default function MapPage() {
   }, [mapMode, setMapMode]);
 
   useEffect(() => {
-    if (!selectedCounty && matchedCounty) {
+    if (matchedCounty && autoOpenedAnchorFipsRef.current !== matchedCounty.fips) {
       setSelectedCounty(matchedCounty);
+      autoOpenedAnchorFipsRef.current = matchedCounty.fips;
     }
-  }, [matchedCounty, selectedCounty, setSelectedCounty]);
+  }, [matchedCounty, setSelectedCounty]);
 
   const activeCounty = selectedCounty ?? matchedCounty ?? null;
 

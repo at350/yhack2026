@@ -92,6 +92,14 @@ export default function IndividualPage() {
     () => counties.find(c => `${c.name}, ${c.stateName}` === profile.location) ?? null,
     [counties, profile.location]
   );
+  const topSimilarityFactors = useMemo(
+    () => similarity
+      ? [...similarity.factors]
+          .sort((a, b) => (b.normalizedValue * b.weight) - (a.normalizedValue * a.weight))
+          .slice(0, 3)
+      : [],
+    [similarity]
+  );
 
   function calcBMI(): string {
     const h = (parseFloat(profile.heightFt) * 12) + parseFloat(profile.heightIn);
@@ -414,10 +422,11 @@ export default function IndividualPage() {
                     <span className="diabetes-context-score">{similarity.score}%</span>
                   </div>
                   <div className="diabetes-context-copy">
-                    <div className="diabetes-context-kicker">Diabetes-Focused Context Layer</div>
+                    <div className="diabetes-context-kicker">Diabetes Context</div>
                     <h3 className="diabetes-context-title">{similarity.title}</h3>
-                    <p className="diabetes-context-subhead">{similarity.summary}</p>
-                    <p className="diabetes-context-note">{similarity.interpretation}</p>
+                    <p className="diabetes-context-subhead">
+                      Compared against {similarity.county.name}, {similarity.county.state} population patterns.
+                    </p>
                     <div className="diabetes-context-badges">
                       <span className="diabetes-context-chip">
                         {similarity.matchedBy === 'patient_county' ? 'Patient county anchor' : 'State-demographic fallback'}
@@ -428,10 +437,10 @@ export default function IndividualPage() {
                 </div>
                 <div className="diabetes-context-breakdown">
                   <div className="diabetes-context-breakdown-head">
-                    <span>What is driving the match</span>
+                    <span>Top drivers</span>
                     <span className="diabetes-context-caveat">{similarity.caveat}</span>
                   </div>
-                  {similarity.factors.map(factor => (
+                  {topSimilarityFactors.map(factor => (
                     <div key={factor.id} className="diabetes-factor-row">
                       <div className="diabetes-factor-copy">
                         <div className="diabetes-factor-header">
@@ -441,9 +450,7 @@ export default function IndividualPage() {
                         <div className="diabetes-factor-bar">
                           <span style={{ width: `${Math.max(8, factor.normalizedValue * 100)}%` }} />
                         </div>
-                        <p className="diabetes-factor-explainer">
-                          {factor.explanation} Weight {(factor.weight * 100).toFixed(0)}%.
-                        </p>
+                        <p className="diabetes-factor-explainer">{(factor.weight * 100).toFixed(0)}% of score</p>
                       </div>
                     </div>
                   ))}
@@ -460,10 +467,6 @@ export default function IndividualPage() {
                   <div className="diabetes-context-stat">
                     <span className="diabetes-context-stat-value">{similarity.countyPhysicalInactivityRate}%</span>
                     <span className="diabetes-context-stat-label">Physical inactivity</span>
-                  </div>
-                  <div className="diabetes-context-stat">
-                    <span className="diabetes-context-stat-value">{(similarity.population / 1000).toFixed(0)}k</span>
-                    <span className="diabetes-context-stat-label">Reference population</span>
                   </div>
                 </div>
               </div>
@@ -758,12 +761,25 @@ function HorizontalTimeline({ events }: { events: TimelineEvent[] }) {
     setActiveIndex(nextIndex);
   }, [events.length, layout.detailWidth, layout.gap, layout.padding]);
 
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
     const viewport = viewportRef.current;
-    if (!viewport) return;
-    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-    e.preventDefault();
-    viewport.scrollBy({ left: e.deltaY * 1.05, behavior: 'auto' });
+    if (!wrapper || !viewport) return;
+
+    const onWheel = (event: WheelEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest('.timeline-focus-desc.scrollable')) {
+        return;
+      }
+      const dominantDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (dominantDelta === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      viewport.scrollBy({ left: dominantDelta * 1.05, behavior: 'auto' });
+    };
+
+    wrapper.addEventListener('wheel', onWheel, { passive: false });
+    return () => wrapper.removeEventListener('wheel', onWheel);
   }, []);
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -870,7 +886,6 @@ function HorizontalTimeline({ events }: { events: TimelineEvent[] }) {
         ref={viewportRef}
         className={`timeline-viewport${isDragging ? ' dragging' : ''}`}
         onScroll={handleScroll}
-        onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
