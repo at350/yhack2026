@@ -1,31 +1,16 @@
 {
-  "version": 2,
-  "builds": [
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install && npm install --prefix frontend && npm install --prefix backend",
+  "buildCommand": "npm run build --prefix frontend",
+  "outputDirectory": "frontend/dist",
+  "rewrites": [
     {
-      "src": "frontend/dist/**",
-      "use": "@vercel/static",
-      "config": { "distDir": "frontend/dist" }
+      "source": "/",
+      "destination": "/index.html"
     },
     {
-      "src": "backend/src/index.ts",
-      "use": "@vercel/node"
+      "source": "/:path((?!api/).*)",
+      "destination": "/index.html"
     }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "backend/src/index.ts"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "frontend/dist/$1"
-    }
-  ],
-  "env": {
-    "LAVA_FORWARD_TOKEN": "@lava-forward-token",
-    "LAVA_MODEL": "openai/gpt-4o-mini",
-    "LAVA_MODEL_FAST": "openai/gpt-4o-mini",
-    "LAVA_MODEL_SUMMARY": "openai/gpt-4o-mini",
-    "LAVA_MODEL_DEEP": "openai/gpt-4o-mini"
-  }
+  ]
 }
