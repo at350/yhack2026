@@ -21,6 +21,17 @@ const STATE_ABBREV: Record<string, string> = {
   'Wisconsin': 'WI', 'Wyoming': 'WY', 'District of Columbia': 'DC',
 };
 
+const CT_LEGACY_COUNTY_TO_PLANNING_REGIONS: Record<string, string[]> = {
+  '09001': ['09120', '09190'],
+  '09003': ['09110'],
+  '09005': ['09160'],
+  '09007': ['09130'],
+  '09009': ['09140', '09170'],
+  '09011': ['09180'],
+  '09013': ['09110'],
+  '09015': ['09150'],
+};
+
 function safeNum(val: unknown): number {
   if (typeof val === 'number' && !isNaN(val)) return val;
   return 0;
@@ -30,6 +41,15 @@ function safeNum(val: unknown): number {
 function safeN(val: unknown): number | null {
   if (typeof val === 'number' && !isNaN(val) && val > 0) return val;
   return null;
+}
+
+function preferMetric(primary: number, fallback: number): number {
+  return primary > 0 ? primary : fallback;
+}
+
+function roundTo(value: number, digits: number): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
 }
 
 function transformCounty(raw: Record<string, unknown>): CountyRecord {
@@ -119,6 +139,115 @@ function transformCounty(raw: Record<string, unknown>): CountyRecord {
   };
 }
 
+function aggregateCountyRecords(records: CountyRecord[]): CountyRecord {
+  if (records.length === 0) {
+    throw new Error('Cannot aggregate zero county records');
+  }
+
+  const totalPopulation = records.reduce((sum, record) => sum + record.population, 0);
+  const weighted = (selector: (record: CountyRecord) => number): number => {
+    if (totalPopulation <= 0) {
+      return selector(records[0]);
+    }
+    return records.reduce((sum, record) => sum + selector(record) * record.population, 0) / totalPopulation;
+  };
+
+  const first = records[0];
+  return {
+    ...first,
+    population: totalPopulation,
+    isUrban: weighted(record => record.isUrban ? 0 : 1) < 0.5,
+    demographics: {
+      pctPoverty: roundTo(weighted(record => record.demographics.pctPoverty), 1),
+      pctUninsured: roundTo(weighted(record => record.demographics.pctUninsured), 1),
+      pctElderly: roundTo(weighted(record => record.demographics.pctElderly), 1),
+      pctBlack: roundTo(weighted(record => record.demographics.pctBlack), 1),
+      pctHispanic: roundTo(weighted(record => record.demographics.pctHispanic), 1),
+      pctWhite: roundTo(weighted(record => record.demographics.pctWhite), 1),
+    },
+    health: {
+      obesity: roundTo(weighted(record => record.health.obesity), 1),
+      smoking: roundTo(weighted(record => record.health.smoking), 1),
+      diabetes: roundTo(weighted(record => record.health.diabetes), 1),
+      physicalInactivity: roundTo(weighted(record => record.health.physicalInactivity), 1),
+      mentalHealth: roundTo(weighted(record => record.health.mentalHealth), 1),
+      heartDisease: roundTo(weighted(record => record.health.heartDisease), 1),
+      copd: roundTo(weighted(record => record.health.copd), 1),
+      checkups: roundTo(weighted(record => record.health.checkups), 1),
+      mortalityRate: roundTo(weighted(record => record.health.mortalityRate), 0),
+    },
+    environment: {
+      aqiPM25: roundTo(weighted(record => record.environment.aqiPM25), 1),
+      aqiO3: roundTo(weighted(record => record.environment.aqiO3), 1),
+    },
+    svi: {
+      overall: roundTo(weighted(record => record.svi.overall), 3),
+      socioeconomic: roundTo(weighted(record => record.svi.socioeconomic), 3),
+      householdComp: roundTo(weighted(record => record.svi.householdComp), 3),
+      minority: roundTo(weighted(record => record.svi.minority), 3),
+      housingTransport: roundTo(weighted(record => record.svi.housingTransport), 3),
+    },
+    raceData: first.raceData,
+  };
+}
+
+function normalizeConnecticutCounties(rawData: Record<string, unknown>[]): CountyRecord[] {
+  const transformedByFips = new Map(rawData.map(record => {
+    const transformed = transformCounty(record);
+    return [transformed.fips, transformed] as const;
+  }));
+
+  return Object.entries(CT_LEGACY_COUNTY_TO_PLANNING_REGIONS).map(([legacyFips, regionFips]) => {
+    const legacy = transformedByFips.get(legacyFips);
+    if (!legacy) {
+      throw new Error(`Missing Connecticut legacy county record for ${legacyFips}`);
+    }
+
+    const planningRegions = regionFips
+      .map(fips => transformedByFips.get(fips))
+      .filter((record): record is CountyRecord => Boolean(record));
+
+    const fallback = planningRegions.length > 0 ? aggregateCountyRecords(planningRegions) : legacy;
+
+    return {
+      ...legacy,
+      population: roundTo(preferMetric(legacy.population, fallback.population), 0),
+      isUrban: legacy.population > 0 ? legacy.isUrban : fallback.isUrban,
+      demographics: {
+        pctPoverty: roundTo(preferMetric(legacy.demographics.pctPoverty, fallback.demographics.pctPoverty), 1),
+        pctUninsured: roundTo(preferMetric(legacy.demographics.pctUninsured, fallback.demographics.pctUninsured), 1),
+        pctElderly: roundTo(preferMetric(legacy.demographics.pctElderly, fallback.demographics.pctElderly), 1),
+        pctBlack: roundTo(preferMetric(legacy.demographics.pctBlack, fallback.demographics.pctBlack), 1),
+        pctHispanic: roundTo(preferMetric(legacy.demographics.pctHispanic, fallback.demographics.pctHispanic), 1),
+        pctWhite: roundTo(preferMetric(legacy.demographics.pctWhite, fallback.demographics.pctWhite), 1),
+      },
+      health: {
+        obesity: roundTo(preferMetric(legacy.health.obesity, fallback.health.obesity), 1),
+        smoking: roundTo(preferMetric(legacy.health.smoking, fallback.health.smoking), 1),
+        diabetes: roundTo(preferMetric(legacy.health.diabetes, fallback.health.diabetes), 1),
+        physicalInactivity: roundTo(preferMetric(legacy.health.physicalInactivity, fallback.health.physicalInactivity), 1),
+        mentalHealth: roundTo(preferMetric(legacy.health.mentalHealth, fallback.health.mentalHealth), 1),
+        heartDisease: roundTo(preferMetric(legacy.health.heartDisease, fallback.health.heartDisease), 1),
+        copd: roundTo(preferMetric(legacy.health.copd, fallback.health.copd), 1),
+        checkups: roundTo(preferMetric(legacy.health.checkups, fallback.health.checkups), 1),
+        mortalityRate: roundTo(preferMetric(legacy.health.mortalityRate, fallback.health.mortalityRate), 0),
+      },
+      environment: {
+        aqiPM25: roundTo(preferMetric(legacy.environment.aqiPM25, fallback.environment.aqiPM25), 1),
+        aqiO3: roundTo(preferMetric(legacy.environment.aqiO3, fallback.environment.aqiO3), 1),
+      },
+      svi: {
+        overall: roundTo(fallback.svi.overall, 3),
+        socioeconomic: roundTo(fallback.svi.socioeconomic, 3),
+        householdComp: roundTo(fallback.svi.householdComp, 3),
+        minority: roundTo(fallback.svi.minority, 3),
+        housingTransport: roundTo(fallback.svi.housingTransport, 3),
+      },
+      raceData: legacy.raceData,
+    };
+  });
+}
+
 const TABS: { id: TabId; label: string; icon: string; navIcon: string }[] = [
   { id: 'individual', label: 'Individual Context', icon: '👤', navIcon: '👤' },
   { id: 'map', label: 'Population Context', icon: '🗺️', navIcon: '🗺️' },
@@ -131,16 +260,15 @@ export default function App() {
   useEffect(() => {
     fetch('/data/county_health_data_full.json')
       .then(r => r.json())
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .then((data: any[]) => setCounties(
-        data
-          // Connecticut replaced county governance with planning regions in 2022.
-          // The CHR dataset includes both the legacy county stubs (09001–09015, which
-          // lack demographics/behavioral metrics) and the new planning regions
-          // (09110–09190, which have full data). Drop the stubs to avoid zero-filled records.
-          .filter((raw: Record<string, unknown>) => !(raw.state === 'Connecticut' && parseInt(String(raw.fips)) < 9100))
-          .map(transformCounty)
-      ))
+      .then((data: Record<string, unknown>[]) => {
+        const nonConnecticutCounties = data
+          .filter(record => record.state !== 'Connecticut')
+          .map(transformCounty);
+        const connecticutCounties = normalizeConnecticutCounties(
+          data.filter(record => record.state === 'Connecticut')
+        );
+        setCounties([...nonConnecticutCounties, ...connecticutCounties]);
+      })
       .catch(console.error);
   }, [setCounties]);
 

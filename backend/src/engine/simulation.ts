@@ -88,6 +88,11 @@ function preferMetric(primary: number, fallback: number): number {
   return primary > 0 ? primary : fallback;
 }
 
+function roundTo(value: number, digits: number): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function transformCounty(raw: any): CountyRecord {
   const g = (category: string, field: string): number =>
@@ -165,34 +170,34 @@ function aggregateCountyRecords(records: CountyRecord[]): CountyRecord {
     population: totalPopulation,
     isUrban: weighted(record => record.isUrban ? 0 : 1) < 0.5,
     demographics: {
-      pctPoverty: weighted(record => record.demographics.pctPoverty),
-      pctUninsured: weighted(record => record.demographics.pctUninsured),
-      pctElderly: weighted(record => record.demographics.pctElderly),
-      pctBlack: weighted(record => record.demographics.pctBlack),
-      pctHispanic: weighted(record => record.demographics.pctHispanic),
-      pctWhite: weighted(record => record.demographics.pctWhite),
+      pctPoverty: roundTo(weighted(record => record.demographics.pctPoverty), 1),
+      pctUninsured: roundTo(weighted(record => record.demographics.pctUninsured), 1),
+      pctElderly: roundTo(weighted(record => record.demographics.pctElderly), 1),
+      pctBlack: roundTo(weighted(record => record.demographics.pctBlack), 1),
+      pctHispanic: roundTo(weighted(record => record.demographics.pctHispanic), 1),
+      pctWhite: roundTo(weighted(record => record.demographics.pctWhite), 1),
     },
     health: {
-      obesity: weighted(record => record.health.obesity),
-      smoking: weighted(record => record.health.smoking),
-      diabetes: weighted(record => record.health.diabetes),
-      physicalInactivity: weighted(record => record.health.physicalInactivity),
-      mentalHealth: weighted(record => record.health.mentalHealth),
-      heartDisease: weighted(record => record.health.heartDisease),
-      copd: weighted(record => record.health.copd),
-      checkups: weighted(record => record.health.checkups),
-      mortalityRate: weighted(record => record.health.mortalityRate),
+      obesity: roundTo(weighted(record => record.health.obesity), 1),
+      smoking: roundTo(weighted(record => record.health.smoking), 1),
+      diabetes: roundTo(weighted(record => record.health.diabetes), 1),
+      physicalInactivity: roundTo(weighted(record => record.health.physicalInactivity), 1),
+      mentalHealth: roundTo(weighted(record => record.health.mentalHealth), 1),
+      heartDisease: roundTo(weighted(record => record.health.heartDisease), 1),
+      copd: roundTo(weighted(record => record.health.copd), 1),
+      checkups: roundTo(weighted(record => record.health.checkups), 1),
+      mortalityRate: roundTo(weighted(record => record.health.mortalityRate), 0),
     },
     environment: {
-      aqiPM25: weighted(record => record.environment.aqiPM25),
-      aqiO3: weighted(record => record.environment.aqiO3),
+      aqiPM25: roundTo(weighted(record => record.environment.aqiPM25), 1),
+      aqiO3: roundTo(weighted(record => record.environment.aqiO3), 1),
     },
     svi: {
-      overall: weighted(record => record.svi.overall),
-      socioeconomic: weighted(record => record.svi.socioeconomic),
-      householdComp: weighted(record => record.svi.householdComp),
-      minority: weighted(record => record.svi.minority),
-      housingTransport: weighted(record => record.svi.housingTransport),
+      overall: roundTo(weighted(record => record.svi.overall), 3),
+      socioeconomic: roundTo(weighted(record => record.svi.socioeconomic), 3),
+      householdComp: roundTo(weighted(record => record.svi.householdComp), 3),
+      minority: roundTo(weighted(record => record.svi.minority), 3),
+      housingTransport: roundTo(weighted(record => record.svi.housingTransport), 3),
     },
   };
 }
@@ -217,32 +222,38 @@ function normalizeConnecticutCounties(raw: any[]): CountyRecord[] {
 
     return {
       ...legacy,
-      population: preferMetric(legacy.population, fallback.population),
+      population: roundTo(preferMetric(legacy.population, fallback.population), 0),
       isUrban: legacy.population > 0 ? legacy.isUrban : fallback.isUrban,
       demographics: {
-        pctPoverty: preferMetric(legacy.demographics.pctPoverty, fallback.demographics.pctPoverty),
-        pctUninsured: preferMetric(legacy.demographics.pctUninsured, fallback.demographics.pctUninsured),
-        pctElderly: preferMetric(legacy.demographics.pctElderly, fallback.demographics.pctElderly),
-        pctBlack: preferMetric(legacy.demographics.pctBlack, fallback.demographics.pctBlack),
-        pctHispanic: preferMetric(legacy.demographics.pctHispanic, fallback.demographics.pctHispanic),
-        pctWhite: preferMetric(legacy.demographics.pctWhite, fallback.demographics.pctWhite),
+        pctPoverty: roundTo(preferMetric(legacy.demographics.pctPoverty, fallback.demographics.pctPoverty), 1),
+        pctUninsured: roundTo(preferMetric(legacy.demographics.pctUninsured, fallback.demographics.pctUninsured), 1),
+        pctElderly: roundTo(preferMetric(legacy.demographics.pctElderly, fallback.demographics.pctElderly), 1),
+        pctBlack: roundTo(preferMetric(legacy.demographics.pctBlack, fallback.demographics.pctBlack), 1),
+        pctHispanic: roundTo(preferMetric(legacy.demographics.pctHispanic, fallback.demographics.pctHispanic), 1),
+        pctWhite: roundTo(preferMetric(legacy.demographics.pctWhite, fallback.demographics.pctWhite), 1),
       },
       health: {
-        obesity: preferMetric(legacy.health.obesity, fallback.health.obesity),
-        smoking: preferMetric(legacy.health.smoking, fallback.health.smoking),
-        diabetes: preferMetric(legacy.health.diabetes, fallback.health.diabetes),
-        physicalInactivity: preferMetric(legacy.health.physicalInactivity, fallback.health.physicalInactivity),
-        mentalHealth: preferMetric(legacy.health.mentalHealth, fallback.health.mentalHealth),
-        heartDisease: preferMetric(legacy.health.heartDisease, fallback.health.heartDisease),
-        copd: preferMetric(legacy.health.copd, fallback.health.copd),
-        checkups: preferMetric(legacy.health.checkups, fallback.health.checkups),
-        mortalityRate: preferMetric(legacy.health.mortalityRate, fallback.health.mortalityRate),
+        obesity: roundTo(preferMetric(legacy.health.obesity, fallback.health.obesity), 1),
+        smoking: roundTo(preferMetric(legacy.health.smoking, fallback.health.smoking), 1),
+        diabetes: roundTo(preferMetric(legacy.health.diabetes, fallback.health.diabetes), 1),
+        physicalInactivity: roundTo(preferMetric(legacy.health.physicalInactivity, fallback.health.physicalInactivity), 1),
+        mentalHealth: roundTo(preferMetric(legacy.health.mentalHealth, fallback.health.mentalHealth), 1),
+        heartDisease: roundTo(preferMetric(legacy.health.heartDisease, fallback.health.heartDisease), 1),
+        copd: roundTo(preferMetric(legacy.health.copd, fallback.health.copd), 1),
+        checkups: roundTo(preferMetric(legacy.health.checkups, fallback.health.checkups), 1),
+        mortalityRate: roundTo(preferMetric(legacy.health.mortalityRate, fallback.health.mortalityRate), 0),
       },
       environment: {
-        aqiPM25: preferMetric(legacy.environment.aqiPM25, fallback.environment.aqiPM25),
-        aqiO3: preferMetric(legacy.environment.aqiO3, fallback.environment.aqiO3),
+        aqiPM25: roundTo(preferMetric(legacy.environment.aqiPM25, fallback.environment.aqiPM25), 1),
+        aqiO3: roundTo(preferMetric(legacy.environment.aqiO3, fallback.environment.aqiO3), 1),
       },
-      svi: fallback.svi,
+      svi: {
+        overall: roundTo(fallback.svi.overall, 3),
+        socioeconomic: roundTo(fallback.svi.socioeconomic, 3),
+        householdComp: roundTo(fallback.svi.householdComp, 3),
+        minority: roundTo(fallback.svi.minority, 3),
+        housingTransport: roundTo(fallback.svi.housingTransport, 3),
+      },
     };
   });
 }
